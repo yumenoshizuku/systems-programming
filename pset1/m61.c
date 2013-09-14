@@ -5,15 +5,31 @@
 #include <stdio.h>
 #include <inttypes.h>
 
+int allocated = 0;
+int sizeallocated = 0;
+int freed = 0;
+int failed =0;
+int failedsize = 0;
+
+
 void *m61_malloc(size_t sz, const char *file, int line) {
     (void) file, (void) line;   // avoid uninitialized variable warnings
-    // Your code here.
-    return malloc(sz);
+    void * retptr = malloc(sz);
+    if (retptr == NULL){
+        failed++;
+        failedsize += sz;
+        return retptr;
+        }
+    else {
+        allocated++;
+        sizeallocated += sz;
+        return retptr;
+     }
 }
 
 void m61_free(void *ptr, const char *file, int line) {
     (void) file, (void) line;   // avoid uninitialized variable warnings
-    // Your code here.
+    freed++;
     free(ptr);
 }
 
@@ -39,8 +55,25 @@ void *m61_calloc(size_t nmemb, size_t sz, const char *file, int line) {
 void m61_getstatistics(struct m61_statistics *stats) {
     // Stub: set all statistics to enormous numbers
     memset(stats, 255, sizeof(struct m61_statistics));
-    // Your code here.
+    
+    stats->nactive = allocated - freed;
+    stats->active_size = 0;
+    stats->ntotal = allocated;
+    stats->total_size = sizeallocated;
+    stats->nfail = failed;
+    stats->fail_size = failedsize;
 }
+
+/*
+struct m61_statistics {
+    unsigned long long nactive;         // # active allocations
+    unsigned long long active_size;     // # bytes in active allocations
+    unsigned long long ntotal;          // # total allocations
+    unsigned long long total_size;      // # bytes in total allocations
+    unsigned long long nfail;           // # failed allocation attempts
+    unsigned long long fail_size;       // # bytes in failed alloc attempts
+};
+*/
 
 void m61_printstatistics(void) {
     struct m61_statistics stats;
