@@ -70,11 +70,6 @@ void m61_free(void *ptr, const char *file, int line) {
                 printf("MEMORY BUG: %s:%d: detected wild write during free of pointer %p\n", file, line, ptr);
                 return;
               }
-/*            if(((sztbl[i][1])%4 ==0 && *((char *)ptr+(sztbl[i][1])) != sztbl[i][2])||((sztbl[i][1])%4 !=0 && *((char *)ptr+(sztbl[i][1])+4-(sztbl[i][1])%4) != sztbl[i][2])){
-                printf("MEMORY BUG: %s:%d: detected wild write during free of pointer %p\n", file, line, ptr);
-                return;
-            }
-*/            
             sizefreed += sztbl[i][1];
             sztbl[i][1]=0;
             sztbl[i][2]=0;
@@ -87,6 +82,11 @@ void m61_free(void *ptr, const char *file, int line) {
         }
         if (i == sztbl[0][1]){
             printf("MEMORY BUG: %s:%d: invalid free of pointer %p, not allocated\n", file, line, ptr);
+            for(i=1;i<=sztbl[0][1];i++){
+                if(ptr>sztbl[i][0] && ptr<sztbl[i][0]+sztbl[i][1]){
+                    printf("  %s:%d: %p is %d bytes inside a %d byte region allocated here\n", file, sztbl[i][5], ptr, ptr-sztbl[i][0],sztbl[i][1]);
+                }
+            }
             return;
        }
 
