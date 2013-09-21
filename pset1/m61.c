@@ -11,7 +11,7 @@ int freed = 0;
 int sizefreed = 0;
 int failed = 0;
 int failedsize = 0;
-int sztbl[100][4] = {0, 1};
+int sztbl[1000][6] = {0, 1};
 size_t top = 0xb000000;
 
 void *m61_malloc(size_t sz, const char *file, int line) {
@@ -27,24 +27,30 @@ void *m61_malloc(size_t sz, const char *file, int line) {
         sizeallocated += sz;
         int i;
         for(i=1; i<=sztbl[0][1]; i++){
+            if(sztbl[i][0]!=0){
+                sztbl[i][3] = *(int *)((char *)(sztbl[i][0])+sztbl[i][2]);
+            }
             if(sztbl[i][0] == retptr && sztbl[i][1] == 0){
                 sztbl[i][1] = sz;
                 while (sz%4 != 0){
                     sz++;
                 }
                 sztbl[i][2] = sz;
-                sztbl[i][3] = (int)(int *)((char *)retptr+sz);
-                
+                sztbl[i][3] = *(int *)((char *)retptr+sz);
+                sztbl[i][4] = (file[4]-48)*100 + (file[5]-48)*10 + (file[6]-48);
+                sztbl[i][5] = line;
                 return retptr;
             }
         }
         sztbl[(sztbl[0][1]+1)][0] = retptr;
         sztbl[(sztbl[0][1]+1)][1] = sz;
+        sztbl[(sztbl[0][1]+1)][4] = (file[4]-48)*100 + (file[5]-48)*10 + (file[6]-48);
+        sztbl[(sztbl[0][1]+1)][5] = line;
         while (sz%4 != 0){
                     sz++;
                 }
                 sztbl[(sztbl[0][1]+1)][2] = sz;
-                sztbl[(sztbl[0][1]+1)][3] = (int)(int *)((char *)retptr+sz);                
+                sztbl[(sztbl[0][1]+1)][3] = *(int *)((char *)retptr+sz);                
         sztbl[0][1] += 1;
 //        top = top + (*((uint *)top)) - (*((uint *)top))%16;
         return retptr;
@@ -60,7 +66,7 @@ void m61_free(void *ptr, const char *file, int line) {
     }
     for (i=1;i<=sztbl[0][1];i++){
         if (sztbl[i][0] == ptr && sztbl[i][1] != 0){
-              if((int)(int *)((char *)ptr+sztbl[i][2])!=sztbl[i][3]){
+              if(*(int *)((char *)ptr+sztbl[i][2])!=sztbl[i][3]){
                 printf("MEMORY BUG: %s:%d: detected wild write during free of pointer %p\n", file, line, ptr);
                 return;
               }
@@ -97,12 +103,11 @@ void *m61_realloc(void *ptr, size_t sz, const char *file, int line) {
             for (i=0; i < ((*((int *)ptr-1))/16)*16; i++){
                 *((char *)new_ptr+i) = *((char *)ptr+i);
             }
-/*            for (i=1;i<=sztbl[0][1];i++){
-                if(sztbl[i][0] == ptr){
-                    sztbl[(sztbl[0][1])][2] = sztbl[i][2];
+            for(i=1; i<=sztbl[0][1]; i++){
+                if(sztbl[i][0]!=0){
+                    sztbl[i][3] = *(int *)((char *)(sztbl[i][0])+sztbl[i][2]);
                 }
-            }
-*/            
+            }            
             m61_free(ptr, file, line);
         }
     }
@@ -159,5 +164,10 @@ void m61_printstatistics(void) {
 }
 
 void m61_printleakreport(void) {
-    // Your code here.
+    int i;
+    for(i=1;i<=sztbl[0][1];i++){
+        if(sztbl[i][1]!=0){
+            printf("LEAK CHECK: test%03d.c:%d: allocated object %p with size %i\n",sztbl[i][4],sztbl[i][5],sztbl[i][0],sztbl[i][1]);
+        }
+    }
 }
