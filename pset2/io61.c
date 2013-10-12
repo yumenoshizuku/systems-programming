@@ -6,13 +6,17 @@
 
 // io61.c
 //    YOUR CODE HERE!
-
+#define BUFSIZE 4096
 
 // io61_file
 //    Data structure for io61 file wrappers. Add your own stuff.
 
 struct io61_file {
-    int fd;
+    int fd;                /* descriptor for this internal buf */
+    int cnt;               /* unread bytes in internal buf */
+    int towrite;
+    char *bufptr;          /* next unread byte in internal buf */
+    char buf[BUFSIZE]; /* internal buffer */
 };
 
 
@@ -26,6 +30,9 @@ io61_file* io61_fdopen(int fd, int mode) {
     assert(fd >= 0);
     io61_file* f = (io61_file*) malloc(sizeof(io61_file));
     f->fd = fd;
+    f->cnt = 0;
+    f->towrite = 0;
+    f->bufptr = f->buf;
     (void) mode;
     return f;
 }
@@ -47,11 +54,11 @@ int io61_close(io61_file* f) {
 //    (which is -1) on error or end-of-file.
 
 int io61_readc(io61_file* f) {
-    unsigned char buf[1];
-    if (read(f->fd, buf, 1) == 1)
-        return buf[0];
-    else
-        return EOF;
+	unsigned char buf[1];
+	if(io61_read(f, buf, 1) == 1)
+		return buf[0];
+	else
+		return EOF;
 }
 
 
@@ -62,7 +69,7 @@ int io61_readc(io61_file* f) {
 int io61_writec(io61_file* f, int ch) {
     unsigned char buf[1];
     buf[0] = ch;
-    if (write(f->fd, buf, 1) == 1)
+    if (io61_write(f, buf, 1) == 1)
         return 0;
     else
         return -1;
@@ -73,7 +80,8 @@ int io61_writec(io61_file* f, int ch) {
 //    Forces a write of any `f` buffers that contain data.
 
 int io61_flush(io61_file* f) {
-    (void) f;
+	if(f->towrite > 0)
+		write(f->fd, f->bufptr, f->towrite);
     return 0;
 }
 
@@ -85,18 +93,27 @@ int io61_flush(io61_file* f) {
 //    -1 an error occurred before any characters were read.
 
 ssize_t io61_read(io61_file* f, char* buf, size_t sz) {
-    size_t nread = 0;
-    while (nread != sz) {
-        int ch = io61_readc(f);
-        if (ch == EOF)
-            break;
-        buf[nread] = ch;
-        ++nread;
+
+    int cnt;
+
+    while (f->cnt <= 0) {  /* refill if buf is empty */
+	f->cnt = read(f->fd, f->buf, BUFSIZE);
+	if (f->cnt < 0) {
+	    if (errno != EINTR) /* interrupted by sig handler return */
+		return -1;
+	}
+	else if (f->cnt == 0)  /* EOF */
+	    return 0;
+	else 
+	    f->bufptr = f->buf; /* reset buffer ptr */
     }
-    if (nread == 0 && sz != 0)
-        return -1;
-    else
-        return nread;
+
+    /* Copy min(sz, f->cnt) bytes from internal buf to user buf */
+    cnt = (f->cnt < sz)?f->cnt:sz;
+    memcpy(buf, f->bufptr, cnt);
+    f->bufptr += cnt;
+    f->cnt -= cnt;
+    return cnt;
 }
 
 
@@ -106,16 +123,55 @@ ssize_t io61_read(io61_file* f, char* buf, size_t sz) {
 //    an error occurred before any characters were written.
 
 ssize_t io61_write(io61_file* f, const char* buf, size_t sz) {
-    size_t nwritten = 0;
-    while (nwritten != sz) {
-        if (io61_writec(f, buf[nwritten]) == -1)
-            break;
-        ++nwritten;
-    }
-    if (nwritten == 0 && sz != 0)
-        return -1;
-    else
-        return nwritten;
+	int cnt;
+	if(f->bufptr + f->towrite + sz > f->buf + BUFSIZE){
+		while (f->cnt <= 0) {
+			f->cnt = write(f->fd, f->bufptr, f->towrite);
+			if (f->cnt < 0) {
+	   			if (errno != EINTR)
+					return -1;
+			}
+			else if (f->cnt == 0)
+	  	 		return 0;
+			else 
+	  	 	f->bufptr += f->cnt; 
+		}
+		f->towrite -= f->cnt;
+		cnt = f->cnt;
+		f->cnt = 0;
+	}
+	if(f->towrite <= 0){
+		f->bufptr = f->buf;
+	}
+	if(f->bufptr + f->towrite + sz <= f->buf + BUFSIZE){
+		if(sizeof(buf) > 0){
+			if(memcpy(f->bufptr + f->towrite, buf, sz)){
+				f->towrite += sz;
+				cnt = sz;/*
+				if(f->towrite == BUFSIZE){
+					while (f->cnt <= 0) {
+						f->cnt = write(f->fd, f->bufptr, f->towrite);
+							if (f->cnt < 0) {
+	   							if (errno != EINTR)
+									return -1;
+							}
+							else if (f->cnt == 0)
+	  	 						return 0;
+							else 
+	  	 						f->bufptr += f->cnt; 
+					}
+					f->towrite -= f->cnt;
+					cnt = f->cnt;
+					f->cnt = 0;
+				}*/
+			}
+			else
+				return -1;
+		}
+		else
+			return -1;
+	}
+	return cnt;
 }
 
 
