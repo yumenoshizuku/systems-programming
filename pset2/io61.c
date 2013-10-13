@@ -14,8 +14,8 @@
 struct io61_file {
     int fd;                /* descriptor for this internal buf */
     int cnt;               /* unread bytes in internal buf */
-    int towrite;
-    int seeked;
+    int towrite;			/* bytes in buffer that can be written in subsequent order */
+    int seeked;				/* if the file has been seeked, the buffer will not work */
     char *bufptr;          /* next unread byte in internal buf */
     char buf[BUFSIZE]; /* internal buffer */
 };
@@ -50,6 +50,7 @@ int io61_close(io61_file* f) {
     return r;
 }
 
+// reset the buffer if the file has been seeked
 void io61_resetbuffer(io61_file* f) {
     f->cnt = 0;
     f->towrite = 0;
@@ -63,7 +64,7 @@ void io61_resetbuffer(io61_file* f) {
 
 int io61_readc(io61_file* f) {
 	unsigned char buf[1];
-	if(io61_read(f, buf, 1) == 1)
+	if(io61_read(f, buf, 1) == 1)	/* use the buffer if reading in sequential order */
 		return buf[0];
 	else
 		return EOF;
@@ -77,7 +78,7 @@ int io61_readc(io61_file* f) {
 int io61_writec(io61_file* f, int ch) {
     unsigned char buf[1];
     buf[0] = ch;
-    if (io61_write(f, buf, 1) == 1)
+    if (io61_write(f, buf, 1) == 1)	/* use the buffer if writing in sequential order */
         return 0;
     else
         return -1;
@@ -89,7 +90,7 @@ int io61_writec(io61_file* f, int ch) {
 
 int io61_flush(io61_file* f) {
 	if(f->towrite > 0)
-		write(f->fd, f->bufptr, f->towrite);
+		write(f->fd, f->bufptr, f->towrite);	/* if in sequential mode */
     return 0;
 }
 
@@ -104,7 +105,7 @@ ssize_t io61_read(io61_file* f, char* buf, size_t sz) {
 
     int cnt;
 
-    while (f->cnt <= 0 || f->seeked) {  /* refill if buf is empty */
+    while (f->cnt <= 0 || f->seeked) {  /* refill if buf is empty or file position updated */
 	f->cnt = read(f->fd, f->buf, BUFSIZE);
 	if (f->cnt < 0) {
 	    if (errno != EINTR) /* interrupted by sig handler return */
@@ -134,12 +135,12 @@ ssize_t io61_read(io61_file* f, char* buf, size_t sz) {
 
 ssize_t io61_write(io61_file* f, const char* buf, size_t sz) {
 	int cnt;
-	if(f->seeked) {
+	if(f->seeked) { /* buffer content would be outdated */
 		io61_resetbuffer(f);
 		f->seeked = 0;
 		return write(f->fd, buf, sz);
 	}
-	if(f->bufptr + f->towrite + sz > f->buf + BUFSIZE){
+	if(f->bufptr + f->towrite + sz > f->buf + BUFSIZE){ /* if the buffer will be full */
 		while (f->cnt <= 0) {
 			f->cnt = write(f->fd, f->bufptr, f->towrite);
 			if (f->cnt < 0) {
@@ -155,10 +156,10 @@ ssize_t io61_write(io61_file* f, const char* buf, size_t sz) {
 		cnt = f->cnt;
 		f->cnt = 0;
 	}
-	if(f->towrite <= 0){
+	if(f->towrite <= 0){ /* resets buffer once it becomes empty */
 		f->bufptr = f->buf;
 	}
-	if(f->bufptr + f->towrite + sz <= f->buf + BUFSIZE){
+	if(f->bufptr + f->towrite + sz <= f->buf + BUFSIZE){ /* when data can still fit */
 		if(sizeof(buf) > 0){
 			if(memcpy(f->bufptr + f->towrite, buf, sz)){
 				f->towrite += sz;
@@ -181,7 +182,7 @@ ssize_t io61_write(io61_file* f, const char* buf, size_t sz) {
 int io61_seek(io61_file* f, size_t pos) {
     off_t r = lseek(f->fd, (off_t) pos, SEEK_SET);
     if (r == (off_t) pos){
-    	f->seeked = 1;
+    	f->seeked = 1;	/* notifies read() and write() if the file pointer changed */
         return 0;
         }
     else
