@@ -15,6 +15,7 @@ struct io61_file {
     int fd;                /* descriptor for this internal buf */
     int cnt;               /* unread bytes in internal buf */
     int towrite;
+    int seeked;
     char *bufptr;          /* next unread byte in internal buf */
     char buf[BUFSIZE]; /* internal buffer */
 };
@@ -32,6 +33,7 @@ io61_file* io61_fdopen(int fd, int mode) {
     f->fd = fd;
     f->cnt = 0;
     f->towrite = 0;
+    f->seeked = 0;
     f->bufptr = f->buf;
     (void) mode;
     return f;
@@ -46,6 +48,12 @@ int io61_close(io61_file* f) {
     int r = close(f->fd);
     free(f);
     return r;
+}
+
+void io61_resetbuffer(io61_file* f) {
+    f->cnt = 0;
+    f->towrite = 0;
+    f->bufptr = f->buf;
 }
 
 
@@ -96,7 +104,7 @@ ssize_t io61_read(io61_file* f, char* buf, size_t sz) {
 
     int cnt;
 
-    while (f->cnt <= 0) {  /* refill if buf is empty */
+    while (f->cnt <= 0 || f->seeked) {  /* refill if buf is empty */
 	f->cnt = read(f->fd, f->buf, BUFSIZE);
 	if (f->cnt < 0) {
 	    if (errno != EINTR) /* interrupted by sig handler return */
@@ -104,8 +112,10 @@ ssize_t io61_read(io61_file* f, char* buf, size_t sz) {
 	}
 	else if (f->cnt == 0)  /* EOF */
 	    return 0;
-	else 
+	else {
 	    f->bufptr = f->buf; /* reset buffer ptr */
+	    f->seeked = 0;
+	}
     }
 
     /* Copy min(sz, f->cnt) bytes from internal buf to user buf */
@@ -124,6 +134,11 @@ ssize_t io61_read(io61_file* f, char* buf, size_t sz) {
 
 ssize_t io61_write(io61_file* f, const char* buf, size_t sz) {
 	int cnt;
+	if(f->seeked) {
+		io61_resetbuffer(f);
+		f->seeked = 0;
+		return write(f->fd, buf, sz);
+	}
 	if(f->bufptr + f->towrite + sz > f->buf + BUFSIZE){
 		while (f->cnt <= 0) {
 			f->cnt = write(f->fd, f->bufptr, f->towrite);
@@ -147,23 +162,7 @@ ssize_t io61_write(io61_file* f, const char* buf, size_t sz) {
 		if(sizeof(buf) > 0){
 			if(memcpy(f->bufptr + f->towrite, buf, sz)){
 				f->towrite += sz;
-				cnt = sz;/*
-				if(f->towrite == BUFSIZE){
-					while (f->cnt <= 0) {
-						f->cnt = write(f->fd, f->bufptr, f->towrite);
-							if (f->cnt < 0) {
-	   							if (errno != EINTR)
-									return -1;
-							}
-							else if (f->cnt == 0)
-	  	 						return 0;
-							else 
-	  	 						f->bufptr += f->cnt; 
-					}
-					f->towrite -= f->cnt;
-					cnt = f->cnt;
-					f->cnt = 0;
-				}*/
+				cnt = sz;
 			}
 			else
 				return -1;
@@ -181,8 +180,10 @@ ssize_t io61_write(io61_file* f, const char* buf, size_t sz) {
 
 int io61_seek(io61_file* f, size_t pos) {
     off_t r = lseek(f->fd, (off_t) pos, SEEK_SET);
-    if (r == (off_t) pos)
+    if (r == (off_t) pos){
+    	f->seeked = 1;
         return 0;
+        }
     else
         return -1;
 }
