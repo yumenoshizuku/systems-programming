@@ -6,7 +6,7 @@
 
 // io61.c
 //    YOUR CODE HERE!
-#define BUFSIZE 8192
+#define BUFSIZE 32768
 
 // io61_file
 //    Data structure for io61 file wrappers. Add your own stuff.
