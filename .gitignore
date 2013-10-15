@@ -1,6 +1,7 @@
 *.backup
 *.core
 *.dSYM
+*.log
 *.o
 *~
 .deps
