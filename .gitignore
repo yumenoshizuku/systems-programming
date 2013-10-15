@@ -4,6 +4,8 @@
 *.o
 *~
 .deps
+.gitcheckout
+.goutputstream-*
 core*
 tags
 tags.*
