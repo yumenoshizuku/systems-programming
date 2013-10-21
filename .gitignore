@@ -4,6 +4,7 @@
 *.log
 *.o
 *~
+.DS_Store
 .deps
 .gitcheckout
 .goutputstream-*
