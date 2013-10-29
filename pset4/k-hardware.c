@@ -317,7 +317,7 @@ void set_pagetable(pageentry_t* pagetable) {
     assert(PAGEOFFSET(pagetable) == 0); // must be page aligned
     assert(virtual_memory_lookup(pagetable, (uintptr_t) default_int_handler).pa
            == (uintptr_t) default_int_handler);
-    assert(virtual_memory_lookup(pagetable, (uintptr_t) pagetable).pa
+    assert(virtual_memory_lookup(kernel_pagetable, (uintptr_t) pagetable).pa
            == (uintptr_t) pagetable);
     assert(virtual_memory_lookup(pagetable, (uintptr_t) kernel_pagetable).pa
            == (uintptr_t) kernel_pagetable);
