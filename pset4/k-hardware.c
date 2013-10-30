@@ -270,11 +270,13 @@ void virtual_memory_init(void) {
 void virtual_memory_map(pageentry_t* pagetable, uintptr_t va, uintptr_t pa,
                         size_t sz, int perm) {
     assert(va % PAGESIZE == 0); // virtual address is a multiple of PAGESIZE
-    assert(pa % PAGESIZE == 0); // physical address is a multiple of PAGESIZE
     assert(sz % PAGESIZE == 0); // size is a multiple of PAGESIZE
     assert(va + sz >= va);      // virtual address range does not wrap
-    assert(pa + sz >= pa);      // physical address range does not wrap
-    assert(pa + sz <= MEMSIZE_PHYSICAL); // physical addresses exist
+    if (perm & PTE_P) {
+        assert(pa % PAGESIZE == 0); // physical addr is a multiple of PAGESIZE
+        assert(pa + sz >= pa);      // physical address range does not wrap
+        assert(pa + sz <= MEMSIZE_PHYSICAL); // physical addresses exist
+    }
     assert(perm >= 0 && perm < 0x1000);
 
     int l1pageindex = -1;
@@ -288,7 +290,10 @@ void virtual_memory_map(pageentry_t* pagetable, uintptr_t va, uintptr_t pa,
             assert(pagetable[L1PAGEINDEX(ptaddr)] & PTE_P);
             l2pagetable = (pageentry_t*) PTE_ADDR(ptaddr);
         }
-        l2pagetable[L2PAGEINDEX(va)] = pa | perm;
+        if (perm & PTE_P)
+            l2pagetable[L2PAGEINDEX(va)] = pa | perm;
+        else
+            l2pagetable[L2PAGEINDEX(va)] = perm;
     }
 }
 
