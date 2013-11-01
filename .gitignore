@@ -1,9 +1,13 @@
 *.backup
 *.core
 *.dSYM
+*.log
 *.o
 *~
+.DS_Store
 .deps
+.gitcheckout
+.goutputstream-*
 core*
 tags
 tags.*
