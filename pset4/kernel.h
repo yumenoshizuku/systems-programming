@@ -49,7 +49,7 @@ typedef struct proc {
 
 // hardware_init
 //    Initialize x86 hardware, including memory, interrupts, and segments.
-//    All 8MB of accessible physical memory is initially mapped as readable
+//    All 4MB of accessible physical memory is initially mapped as readable
 //    and writable to both kernel and application code.
 void hardware_init(void);
 

@@ -40,7 +40,7 @@ endif
 # -Os is required for the boot loader to fit within 512 bytes;
 # -ffreestanding means there is no standard library.
 CFLAGS	:= $(CFLAGS) $(DEFS) \
-	-std=gnu99 -m32 -Os -ffunction-sections \
+	-std=gnu99 -m32 -ffunction-sections \
 	-ffreestanding -I. -nostdinc -fno-omit-frame-pointer \
 	-Wall -Wno-format -Wno-unused -Werror -ggdb -nostdinc
 # Include -fno-stack-protector if the option exists.
