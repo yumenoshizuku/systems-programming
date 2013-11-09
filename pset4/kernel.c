@@ -403,6 +403,7 @@ void memshow_virtual(pageentry_t* pagetable, const char* name) {
         if (vam.pn < 0)
             color = ' ';
         else {
+            assert(vam.pa < MEMSIZE_PHYSICAL);
             int owner = pageinfo[vam.pn].owner;
             if (pageinfo[vam.pn].refcount == 0)
                 owner = PO_FREE;

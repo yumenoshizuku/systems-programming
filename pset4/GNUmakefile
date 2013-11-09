@@ -20,17 +20,8 @@ endif
 
 -include build/rules.mk
 
-# Generic rules for making object files
 
-$(OBJDIR)/%.o: %.c $(OBJDIR)/stamp $(DEPSDIR)/stamp
-	$(call compile,-c $< -o $@,COMPILE)
-
-$(OBJDIR)/boot.o: boot.c $(OBJDIR)/stamp $(DEPSDIR)/stamp
-	$(call compile,-fomit-frame-pointer -c $< -o $@,COMPILE)
-
-$(OBJDIR)/%.o: %.S $(OBJDIR)/stamp $(DEPSDIR)/stamp
-	$(call compile,-c $< -o $@,ASSEMBLE)
-
+# Object sets
 
 KERNEL_OBJS = $(OBJDIR)/k-interrupt.o $(OBJDIR)/kernel.o \
 	$(OBJDIR)/k-hardware.o $(OBJDIR)/k-loader.o $(OBJDIR)/lib.o
@@ -43,6 +34,26 @@ PROCESS_LINKER_FILES = link/process.ld link/shared.ld
 
 PROCESS_LIB_OBJS = $(OBJDIR)/lib.o $(OBJDIR)/process.o
 ALLOCATOR_OBJS = $(OBJDIR)/p-allocator.o $(PROCESS_LIB_OBJS)
+PROCESS_OBJS = $(OBJDIR)/p-allocator.o $(OBJDIR)/p-fork.o \
+	$(OBJDIR)/p-forkexit.o $(PROCESS_LIB_OBJS)
+
+
+# Generic rules for making object files
+
+$(PROCESS_OBJS): $(OBJDIR)/%.o: %.c $(OBJDIR)/stamp $(DEPSDIR)/stamp
+	$(call compile,-O1 -c $< -o $@,COMPILE)
+
+$(OBJDIR)/%.o: %.c $(OBJDIR)/stamp $(DEPSDIR)/stamp
+	$(call compile,-c $< -o $@,COMPILE)
+
+$(OBJDIR)/boot.o: boot.c $(OBJDIR)/stamp $(DEPSDIR)/stamp
+	$(call compile,-Os -fomit-frame-pointer -c $< -o $@,COMPILE)
+
+$(OBJDIR)/%.o: %.S $(OBJDIR)/stamp $(DEPSDIR)/stamp
+	$(call compile,-c $< -o $@,ASSEMBLE)
+
+
+# Specific rules for WeensyOS
 
 $(OBJDIR)/kernel.full: $(KERNEL_OBJS) $(PROCESS_BINARIES) $(KERNEL_LINKER_FILES)
 	$(call link,-T $(KERNEL_LINKER_FILES) -nostdlib -o $@ $(KERNEL_OBJS) -b binary $(PROCESS_BINARIES),LINK)
