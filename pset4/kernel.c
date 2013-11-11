@@ -85,14 +85,21 @@ void start(const char* command) {
     pageinfo_init();
     console_clear();
     timer_init(HZ);
-
+	    
+    // Processes can't modify kernel memory.
+    virtual_memory_map(kernel_pagetable, 0, 0, PROC_START_ADDR, PTE_P|PTE_W);
+    // (Except for the console.)
+    virtual_memory_map(kernel_pagetable,
+                       (uintptr_t) console, (uintptr_t) console, PAGESIZE,
+                       PTE_P|PTE_W|PTE_U);
+	
     // Set up process descriptors
     memset(processes, 0, sizeof(processes));
     for (pid_t i = 0; i < NPROC; i++) {
         processes[i].p_pid = i;
-        processes[i].p_state = P_FREE;
-    }
-
+        processes[i].p_state = P_FREE;	
+    }	
+	
     if (command && strcmp(command, "fork") == 0)
         process_setup(1, 4);
     else if (command && strcmp(command, "forkexit") == 0)
@@ -105,7 +112,7 @@ void start(const char* command) {
     run(&processes[1]);
 }
 
-
+pageentry_t* copy_pagetable(pageentry_t* pagetable, int8_t owner);
 // process_setup(pid, program_number)
 //    Load application program `program_number` as process number `pid`.
 //    This loads the application's code and data into memory, sets its
@@ -113,8 +120,23 @@ void start(const char* command) {
 
 void process_setup(pid_t pid, int program_number) {
     process_init(&processes[pid], 0);
-    processes[pid].p_pagetable = kernel_pagetable;
-    ++pageinfo[PAGENUMBER(kernel_pagetable)].refcount;
+    if((processes[pid].p_pagetable = copy_pagetable(kernel_pagetable, pid))) {
+    	virtual_memory_map(processes[pid].p_pagetable, PROC_START_ADDR, 
+    													PROC_START_ADDR, 
+    													MEMSIZE_PHYSICAL - PROC_START_ADDR, 
+    													PTE_P|PTE_W);
+    	virtual_memory_map(processes[pid].p_pagetable, PROC_START_ADDR + (pid - 1) * PROC_SIZE, 
+    													PROC_START_ADDR + (pid - 1) * PROC_SIZE,
+                       									PROC_SIZE, 
+                       									PTE_P|PTE_W|PTE_U);
+    	virtual_memory_map(processes[pid].p_pagetable, PROC_START_ADDR + pid * PROC_SIZE, 
+    													PROC_START_ADDR + pid * PROC_SIZE, 
+    													MEMSIZE_PHYSICAL - PROC_START_ADDR - pid * PROC_SIZE, 
+    													PTE_P|PTE_W);
+    } else {
+    	processes[pid].p_pagetable = kernel_pagetable;
+    	++pageinfo[PAGENUMBER(kernel_pagetable)].refcount;
+	}
     int r = program_load(&processes[pid], program_number);
     assert(r >= 0);
     processes[pid].p_registers.reg_esp = PROC_START_ADDR + PROC_SIZE * pid;
@@ -143,6 +165,20 @@ int physical_page_alloc(uintptr_t addr, int8_t owner) {
     }
 }
 
+// copy_pagetable(pagetable, owner)
+// Allocates and returns a new page table, initialized as a copy of pagetable
+pageentry_t* copy_pagetable(pageentry_t* pagetable, int8_t owner) {
+	if(!physical_page_alloc(owner * 2 * PAGESIZE - PAGESIZE, owner) 
+	&& !physical_page_alloc(owner * 2 * PAGESIZE, owner)) {
+		pageentry_t * newpagetable = (pageentry_t *) (owner * 2 * PAGESIZE - PAGESIZE);
+    	memcpy((void*)newpagetable, (void*)(pagetable - (pageentry_t)pagetable % PAGESIZE), PAGESIZE);
+    	newpagetable[0] = (pageentry_t) ((owner * 2 * PAGESIZE) | PTE_P | PTE_W | PTE_U);
+    	memcpy((void*)(owner * 2 * PAGESIZE), (void*)(pagetable[0] - pagetable[0] % PAGESIZE), PAGESIZE);
+    	return newpagetable;
+    } else {
+    	return NULL;
+    }
+}
 
 // interrupt(reg)
 //    Interrupt handler.
@@ -194,7 +230,7 @@ void interrupt(x86_registers* reg) {
     case INT_SYS_PAGE_ALLOC: {
         uintptr_t addr = current->p_registers.reg_eax;
         int r = physical_page_alloc(addr, current->p_pid);
-        if (r >= 0)
+        if (r >= 0 && addr >= PROC_START_ADDR)
             virtual_memory_map(current->p_pagetable, addr, addr,
                                PAGESIZE, PTE_P|PTE_W|PTE_U);
         current->p_registers.reg_eax = r;
