@@ -124,15 +124,7 @@ void process_setup(pid_t pid, int program_number) {
     	virtual_memory_map(processes[pid].p_pagetable, PROC_START_ADDR, 
     													PROC_START_ADDR, 
     													MEMSIZE_PHYSICAL - PROC_START_ADDR, 
-    													PTE_P|PTE_W);
-    	virtual_memory_map(processes[pid].p_pagetable, PROC_START_ADDR + (pid - 1) * PROC_SIZE, 
-    													PROC_START_ADDR + (pid - 1) * PROC_SIZE,
-                       									PROC_SIZE, 
-                       									PTE_P|PTE_W|PTE_U);
-    	virtual_memory_map(processes[pid].p_pagetable, PROC_START_ADDR + pid * PROC_SIZE, 
-    													PROC_START_ADDR + pid * PROC_SIZE, 
-    													MEMSIZE_PHYSICAL - PROC_START_ADDR - pid * PROC_SIZE, 
-    													PTE_P|PTE_W);
+    													0);
     } else {
     	processes[pid].p_pagetable = kernel_pagetable;
     	++pageinfo[PAGENUMBER(kernel_pagetable)].refcount;
@@ -178,6 +170,18 @@ pageentry_t* copy_pagetable(pageentry_t* pagetable, int8_t owner) {
     } else {
     	return NULL;
     }
+}
+
+int sys_page_alloc_func(uintptr_t addr, pageentry_t* pagetable, pid_t pid) {
+    int ppn;
+    for(ppn = 0; ppn < NPAGES; ++ppn)
+    	if(!pageinfo[ppn].refcount)
+        	break;
+    int r = physical_page_alloc(ppn * PAGESIZE, pid);
+    if (r >= 0)
+    	virtual_memory_map(pagetable, addr, ppn * PAGESIZE,
+        					PAGESIZE, PTE_P|PTE_W|PTE_U);
+    return r;
 }
 
 // interrupt(reg)
@@ -229,11 +233,7 @@ void interrupt(x86_registers* reg) {
 
     case INT_SYS_PAGE_ALLOC: {
         uintptr_t addr = current->p_registers.reg_eax;
-        int r = physical_page_alloc(addr, current->p_pid);
-        if (r >= 0 && addr >= PROC_START_ADDR)
-            virtual_memory_map(current->p_pagetable, addr, addr,
-                               PAGESIZE, PTE_P|PTE_W|PTE_U);
-        current->p_registers.reg_eax = r;
+        current->p_registers.reg_eax = sys_page_alloc_func(addr, current->p_pagetable, current->p_pid);
         break;
     }
 
