@@ -113,6 +113,7 @@ void start(const char* command) {
 }
 
 pageentry_t* copy_pagetable(pageentry_t* pagetable, int8_t owner);
+int sys_page_alloc_func(uintptr_t addr, pageentry_t* pagetable, pid_t pid);
 // process_setup(pid, program_number)
 //    Load application program `program_number` as process number `pid`.
 //    This loads the application's code and data into memory, sets its
@@ -131,11 +132,9 @@ void process_setup(pid_t pid, int program_number) {
 	}
     int r = program_load(&processes[pid], program_number);
     assert(r >= 0);
-    processes[pid].p_registers.reg_esp = PROC_START_ADDR + PROC_SIZE * pid;
-    uintptr_t stack_page = processes[pid].p_registers.reg_esp - PAGESIZE;
-    physical_page_alloc(stack_page, pid);
-    virtual_memory_map(processes[pid].p_pagetable, stack_page, stack_page,
-                       PAGESIZE, PTE_P|PTE_W|PTE_U);
+    processes[pid].p_registers.reg_esp = MEMSIZE_VIRTUAL;
+    uintptr_t stack_page = MEMSIZE_VIRTUAL - PAGESIZE;
+    sys_page_alloc_func(stack_page, processes[pid].p_pagetable, pid);
     processes[pid].p_state = P_RUNNABLE;
 }
 
