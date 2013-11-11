@@ -135,12 +135,12 @@ void process_setup(pid_t pid, int program_number) {
     	processes[pid].p_pagetable = kernel_pagetable;
     	++pageinfo[PAGENUMBER(kernel_pagetable)].refcount;
 	}
+    processes[pid].p_state = P_RUNNABLE;
     int r = program_load(&processes[pid], program_number);
     assert(r >= 0);
     processes[pid].p_registers.reg_esp = MEMSIZE_VIRTUAL;
     uintptr_t stack_page = MEMSIZE_VIRTUAL - PAGESIZE;
     sys_page_alloc_func(stack_page, processes[pid].p_pagetable, pid);
-    processes[pid].p_state = P_RUNNABLE;
 }
 
 
@@ -270,6 +270,7 @@ void interrupt(x86_registers* reg) {
        	 					virtual_memory_map(processes[newpid].p_pagetable,
                                va, virtual_memory_lookup(current->p_pagetable, va).pa, PAGESIZE,
                                vam.perm);
+                            ++pageinfo[virtual_memory_lookup(current->p_pagetable, va).pn].refcount;
        	 				}
     				}
 				processes[newpid].p_registers = current->p_registers;
@@ -281,19 +282,6 @@ void interrupt(x86_registers* reg) {
 		}
 		break;
 	}
-	
-	/* FROM FORK
-	    for (uintptr_t va = PROC_START_ADDR; va < MEMSIZE_VIRTUAL; va += PAGESIZE) {
-        vamapping vam = virtual_memory_lookup(current->p_pagetable, va);
-        if (vam.perm) {
-            void* page = page_alloc_unused();
-            memcpy(page, (void*) vam.pa, PAGESIZE);
-            virtual_memory_map(copy->p_pagetable,
-                               va, (uintptr_t) page, PAGESIZE,
-                               vam.perm);
-        }
-    }
-	*/
 	
     case INT_TIMER:
         ++ticks;

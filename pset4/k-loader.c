@@ -84,5 +84,10 @@ static int copyseg(proc* p, const elf_program* ph, const uint8_t* src) {
 
     memcpy((uint8_t*) va, src, end_file - va);
     memset((uint8_t*) end_file, 0, end_mem - end_file);
+    for (uintptr_t page_va = va; page_va < end_mem; page_va += PAGESIZE) {
+        if (!(ph->p_flags & ELF_PFLAG_WRITE))
+        virtual_memory_map(p->p_pagetable, page_va, page_va,
+                           PAGESIZE, PTE_P|PTE_U);
+    }
     return 0;
 }
