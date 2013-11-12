@@ -132,8 +132,7 @@ void process_setup(pid_t pid, int program_number) {
     													2 * PAGESIZE, 
     													PTE_P | PTE_W | PTE_U);
     } else {
-    	processes[pid].p_pagetable = kernel_pagetable;
-    	++pageinfo[PAGENUMBER(kernel_pagetable)].refcount;
+    	return;
 	}
     processes[pid].p_state = P_RUNNABLE;
     int r = program_load(&processes[pid], program_number);
@@ -163,7 +162,7 @@ int physical_page_alloc(uintptr_t addr, int8_t owner) {
 
 void* page_alloc_lite(pid_t pid) {
     int pn;
-    for(pn = 0; pn < NPAGES; ++pn)
+    for(pn = 1; pn < NPAGES; ++pn)
     	if(!pageinfo[pn].refcount)
         	break;
     int r = physical_page_alloc(pn * PAGESIZE, pid);
@@ -179,17 +178,26 @@ pageentry_t* copy_pagetable(pageentry_t* pagetable, int8_t owner) {
 	if((pagel1 = page_alloc_lite(owner)) && (pagel2 = page_alloc_lite(owner))) {
 		pageentry_t * newpagetable = (pageentry_t *) pagel1;
     	memcpy((void*)newpagetable, (void*)(pagetable - (pageentry_t)pagetable % PAGESIZE), PAGESIZE);
-    	newpagetable[0] = (pageentry_t) ((uint32_t)pagel2 | PTE_P | PTE_W | PTE_U);
+    	newpagetable[0] = (pageentry_t) ((uintptr_t)pagel2 | PTE_P | PTE_W | PTE_U);
     	memcpy(pagel2, (void*)(pagetable[0] - pagetable[0] % PAGESIZE), PAGESIZE);
+//    	log_printf("created pagetable for %d at %p, %p with values %p, %p\n", owner, PAGENUMBER(pagel1), PAGENUMBER(pagel2), newpagetable, newpagetable[0]);
     	return newpagetable;
     } else {
+    	if (!pagel1) {
+    		pageinfo[(uintptr_t)pagel1].refcount = 0;
+    		pageinfo[(uintptr_t)pagel1].owner = PO_FREE;
+    	}
+    	if (!pagel2) {
+    		pageinfo[(uintptr_t)pagel2].refcount = 0;
+    		pageinfo[(uintptr_t)pagel2].owner = PO_FREE;
+    	}
     	return NULL;
     }
 }
 
 int sys_page_alloc_func(uintptr_t addr, pageentry_t* pagetable, pid_t pid) {
     int pn;
-    for(pn = 0; pn < NPAGES; ++pn)
+    for(pn = 1; pn < NPAGES; ++pn)
     	if(!pageinfo[pn].refcount)
         	break;
     int r = physical_page_alloc(pn * PAGESIZE, pid);
@@ -258,6 +266,7 @@ void interrupt(x86_registers* reg) {
 			if(processes[newpid].p_state == P_FREE) {
 				processes[newpid].p_state = P_RUNNABLE;
 				processes[newpid].p_pagetable = copy_pagetable(current->p_pagetable, newpid);
+				if (processes[newpid].p_pagetable) {
 				    for (uintptr_t va = PROC_START_ADDR; va < MEMSIZE_VIRTUAL; va += PAGESIZE) {
         				vamapping vam = virtual_memory_lookup(current->p_pagetable, va);
         				if ((vam.perm & PTE_W) && pageinfo[vam.pn].owner == current->p_pid) {
@@ -273,13 +282,40 @@ void interrupt(x86_registers* reg) {
                             ++pageinfo[virtual_memory_lookup(current->p_pagetable, va).pn].refcount;
        	 				}
     				}
-				processes[newpid].p_registers = current->p_registers;
-				processes[newpid].p_registers.reg_eax = 0;
-				current->p_registers.reg_eax = newpid;
-				break;
-			} else if(newpid == 15)
+					processes[newpid].p_registers = current->p_registers;
+					processes[newpid].p_registers.reg_eax = 0;
+					current->p_registers.reg_eax = newpid;
+//					log_printf("forked process %d\n", newpid);
+					break;
+    			} else {
+    				processes[newpid].p_state = P_FREE;
+					current->p_registers.reg_eax = -1;
+					break;
+    			}
+			} else if(newpid == NPROC - 1)
 				current->p_registers.reg_eax = -1;
 		}
+		break;
+	}
+	
+	case INT_SYS_EXIT: {
+//		log_printf("%d wants to exit\n", current->p_pid);
+		for (uintptr_t va = PROC_START_ADDR; va < MEMSIZE_VIRTUAL; va += PAGESIZE) {
+			vamapping vam = virtual_memory_lookup(current->p_pagetable, va);
+			if (vam.perm && vam.pn > 0 && pageinfo[vam.pn].owner == current->p_pid && pageinfo[vam.pn].refcount && vam.pn != PAGENUMBER(current->p_pagetable) && vam.pn != PAGENUMBER(current->p_pagetable[0])) { 
+				if (!(--pageinfo[vam.pn].refcount)) {
+					pageinfo[vam.pn].owner = PO_FREE;
+				} else {
+					pageinfo[vam.pn].owner = 1;
+				}
+			}
+		}
+			pageinfo[PAGENUMBER(current->p_pagetable[0])].owner = PO_FREE;
+			pageinfo[PAGENUMBER(current->p_pagetable[0])].refcount = 0;
+//			log_printf("deleting pagetable for pid %d, at physical page %p, refcount is %d\n", current->p_pid, PAGENUMBER(current->p_pagetable[0]), pageinfo[PAGENUMBER(current->p_pagetable[0])].refcount);
+			pageinfo[PAGENUMBER(current->p_pagetable)].owner = PO_FREE;
+			pageinfo[PAGENUMBER(current->p_pagetable)].refcount = 0;
+		current->p_state = P_FREE;
 		break;
 	}
 	
@@ -436,8 +472,12 @@ void virtual_memory_check(void) {
 
     // Check that all referenced pages refer to active processes
     for (int pn = 0; pn < PAGENUMBER(MEMSIZE_PHYSICAL); ++pn)
-        if (pageinfo[pn].refcount > 0 && pageinfo[pn].owner >= 0)
+        if (pageinfo[pn].refcount > 0 && pageinfo[pn].owner >= 0) {
+        	if(processes[pageinfo[pn].owner].p_state == P_FREE) {
+        		log_printf("process %d for physical page %x is free, refcount %d\n", pageinfo[pn].owner, pn, pageinfo[pn].refcount);
+        	}
             assert(processes[pageinfo[pn].owner].p_state != P_FREE);
+        }
 }
 
 
