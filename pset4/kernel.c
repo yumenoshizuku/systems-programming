@@ -112,8 +112,64 @@ void start(const char* command) {
     run(&processes[1]);
 }
 
-pageentry_t* copy_pagetable(pageentry_t* pagetable, int8_t owner);
-int sys_page_alloc_func(uintptr_t addr, pageentry_t* pagetable, pid_t pid);
+// page_alloc_lite(pid)
+//   Helper function that allocates the first empty page and returns its address
+//   On fault, reurns null
+
+void* page_alloc_lite(pid_t pid) {
+    int pn;
+    for(pn = 1; pn < NPAGES; ++pn)
+    	if(!pageinfo[pn].refcount)
+        	break;
+    int r = physical_page_alloc(pn * PAGESIZE, pid);
+    if (r >= 0) 
+    	return (void*) PAGEADDRESS(pn);
+    return NULL;
+}
+
+// copy_pagetable(pagetable, owner)
+//   Allocates and returns a new page table, initialized as a copy of pagetable
+//   If not successful, clear any allocated pages
+
+pageentry_t* copy_pagetable(pageentry_t* pagetable, int8_t owner) {
+	void* pagel1, *pagel2;
+	if((pagel1 = page_alloc_lite(owner)) && (pagel2 = page_alloc_lite(owner))) {
+		pageentry_t * newpagetable = (pageentry_t *) pagel1;
+    	memcpy((void*)newpagetable, (void*)(pagetable - (pageentry_t)pagetable % PAGESIZE), PAGESIZE);
+    	newpagetable[0] = (pageentry_t) ((uintptr_t)pagel2 | PTE_P | PTE_W | PTE_U);
+    	memcpy(pagel2, (void*)(pagetable[0] - pagetable[0] % PAGESIZE), PAGESIZE);
+//    	log_printf("created pagetable for %d at %p, %p with values %p, %p\n", \
+//	owner, PAGENUMBER(pagel1), PAGENUMBER(pagel2), newpagetable, newpagetable[0]);
+    	return newpagetable;
+    } else {
+    	if (!pagel1) {
+    		pageinfo[(uintptr_t)pagel1].refcount = 0;
+    		pageinfo[(uintptr_t)pagel1].owner = PO_FREE;
+    	}
+    	if (!pagel2) {
+    		pageinfo[(uintptr_t)pagel2].refcount = 0;
+    		pageinfo[(uintptr_t)pagel2].owner = PO_FREE;
+    	}
+    	return NULL;
+    }
+}
+
+// sys_page_alloc_func(addr, pagetable, pid)
+//   Helper function for SYS_PAGE_ALLOC that allocates the first empty physical
+//   page for process[pid] and map its virtual address as addr
+//   Returns 0 on success and -1 on failure
+
+int sys_page_alloc_func(uintptr_t addr, pageentry_t* pagetable, pid_t pid) {
+    int pn;
+    for(pn = 1; pn < NPAGES; ++pn)
+    	if(!pageinfo[pn].refcount)
+        	break;
+    int r = physical_page_alloc(pn * PAGESIZE, pid);
+    if (r >= 0) 
+    	virtual_memory_map(pagetable, addr, pn * PAGESIZE,
+        					PAGESIZE, PTE_P|PTE_W|PTE_U);
+    return r;
+}
 
 // process_setup(pid, program_number)
 //    Load application program `program_number` as process number `pid`.
@@ -158,53 +214,6 @@ int physical_page_alloc(uintptr_t addr, int8_t owner) {
         pageinfo[PAGENUMBER(addr)].owner = owner;
         return 0;
     }
-}
-
-void* page_alloc_lite(pid_t pid) {
-    int pn;
-    for(pn = 1; pn < NPAGES; ++pn)
-    	if(!pageinfo[pn].refcount)
-        	break;
-    int r = physical_page_alloc(pn * PAGESIZE, pid);
-    if (r >= 0) 
-    	return (void*) PAGEADDRESS(pn);
-    return NULL;
-}
-
-// copy_pagetable(pagetable, owner)
-// Allocates and returns a new page table, initialized as a copy of pagetable
-pageentry_t* copy_pagetable(pageentry_t* pagetable, int8_t owner) {
-	void* pagel1, *pagel2;
-	if((pagel1 = page_alloc_lite(owner)) && (pagel2 = page_alloc_lite(owner))) {
-		pageentry_t * newpagetable = (pageentry_t *) pagel1;
-    	memcpy((void*)newpagetable, (void*)(pagetable - (pageentry_t)pagetable % PAGESIZE), PAGESIZE);
-    	newpagetable[0] = (pageentry_t) ((uintptr_t)pagel2 | PTE_P | PTE_W | PTE_U);
-    	memcpy(pagel2, (void*)(pagetable[0] - pagetable[0] % PAGESIZE), PAGESIZE);
-//    	log_printf("created pagetable for %d at %p, %p with values %p, %p\n", owner, PAGENUMBER(pagel1), PAGENUMBER(pagel2), newpagetable, newpagetable[0]);
-    	return newpagetable;
-    } else {
-    	if (!pagel1) {
-    		pageinfo[(uintptr_t)pagel1].refcount = 0;
-    		pageinfo[(uintptr_t)pagel1].owner = PO_FREE;
-    	}
-    	if (!pagel2) {
-    		pageinfo[(uintptr_t)pagel2].refcount = 0;
-    		pageinfo[(uintptr_t)pagel2].owner = PO_FREE;
-    	}
-    	return NULL;
-    }
-}
-
-int sys_page_alloc_func(uintptr_t addr, pageentry_t* pagetable, pid_t pid) {
-    int pn;
-    for(pn = 1; pn < NPAGES; ++pn)
-    	if(!pageinfo[pn].refcount)
-        	break;
-    int r = physical_page_alloc(pn * PAGESIZE, pid);
-    if (r >= 0) 
-    	virtual_memory_map(pagetable, addr, pn * PAGESIZE,
-        					PAGESIZE, PTE_P|PTE_W|PTE_U);
-    return r;
 }
 
 // interrupt(reg)
@@ -260,21 +269,25 @@ void interrupt(x86_registers* reg) {
         break;
     }
 
+	// forks a new process at the first free process slot
+	// returns child pid to parent, 0 to child process, and -1 on fault
 	case INT_SYS_FORK: {
 		int newpid;
 		for(newpid = 1; newpid < NPROC; ++newpid) {
 			if(processes[newpid].p_state == P_FREE) {
-				processes[newpid].p_state = P_RUNNABLE;
+				processes[newpid].p_state = P_RUNNABLE; // prevents fault assert
 				processes[newpid].p_pagetable = copy_pagetable(current->p_pagetable, newpid);
 				if (processes[newpid].p_pagetable) {
 				    for (uintptr_t va = PROC_START_ADDR; va < MEMSIZE_VIRTUAL; va += PAGESIZE) {
         				vamapping vam = virtual_memory_lookup(current->p_pagetable, va);
+        				// copies writable pages and map to same virtual address
         				if ((vam.perm & PTE_W) && pageinfo[vam.pn].owner == current->p_pid) {
         					void* page = page_alloc_lite(newpid);
             				memcpy(page, (void*) vam.pa, PAGESIZE);
             				virtual_memory_map(processes[newpid].p_pagetable,
                                va, (uintptr_t) page, PAGESIZE,
                                vam.perm);
+                        // shares read-only pages at same virtual address
        	 				} else if(vam.perm && pageinfo[vam.pn].owner == current->p_pid) {
        	 					virtual_memory_map(processes[newpid].p_pagetable,
                                va, virtual_memory_lookup(current->p_pagetable, va).pa, PAGESIZE,
@@ -287,34 +300,40 @@ void interrupt(x86_registers* reg) {
 					current->p_registers.reg_eax = newpid;
 //					log_printf("forked process %d\n", newpid);
 					break;
-    			} else {
+    			} else { // fail: can't allocate physical page for page table
     				processes[newpid].p_state = P_FREE;
 					current->p_registers.reg_eax = -1;
 					break;
     			}
-			} else if(newpid == NPROC - 1)
+			} else if(newpid == NPROC - 1) // fail: no more vacant process slot
 				current->p_registers.reg_eax = -1;
 		}
 		break;
 	}
 	
+	// exit marks not shared process memory as free and assigns pid 1 as owner
+	// of any shared memory. pagetables are also erased.
 	case INT_SYS_EXIT: {
 //		log_printf("%d wants to exit\n", current->p_pid);
 		for (uintptr_t va = PROC_START_ADDR; va < MEMSIZE_VIRTUAL; va += PAGESIZE) {
 			vamapping vam = virtual_memory_lookup(current->p_pagetable, va);
+			// go through all process-owned virtual pages except for page tables
 			if (vam.perm && vam.pn > 0 && pageinfo[vam.pn].owner == current->p_pid && pageinfo[vam.pn].refcount && vam.pn != PAGENUMBER(current->p_pagetable) && vam.pn != PAGENUMBER(current->p_pagetable[0])) { 
+				// if decremented refcount is 0, mark as free
 				if (!(--pageinfo[vam.pn].refcount)) {
 					pageinfo[vam.pn].owner = PO_FREE;
+				// else assign pid 1 as owner
 				} else {
 					pageinfo[vam.pn].owner = 1;
 				}
 			}
 		}
-			pageinfo[PAGENUMBER(current->p_pagetable[0])].owner = PO_FREE;
-			pageinfo[PAGENUMBER(current->p_pagetable[0])].refcount = 0;
-//			log_printf("deleting pagetable for pid %d, at physical page %p, refcount is %d\n", current->p_pid, PAGENUMBER(current->p_pagetable[0]), pageinfo[PAGENUMBER(current->p_pagetable[0])].refcount);
-			pageinfo[PAGENUMBER(current->p_pagetable)].owner = PO_FREE;
-			pageinfo[PAGENUMBER(current->p_pagetable)].refcount = 0;
+		// clears memory occupied by page table
+		pageinfo[PAGENUMBER(current->p_pagetable[0])].owner = PO_FREE;
+		pageinfo[PAGENUMBER(current->p_pagetable[0])].refcount = 0;
+//		log_printf("deleting pagetable for pid %d, at physical page %p, refcount is %d\n", current->p_pid, PAGENUMBER(current->p_pagetable[0]), pageinfo[PAGENUMBER(current->p_pagetable[0])].refcount);
+		pageinfo[PAGENUMBER(current->p_pagetable)].owner = PO_FREE;
+		pageinfo[PAGENUMBER(current->p_pagetable)].refcount = 0;
 		current->p_state = P_FREE;
 		break;
 	}
