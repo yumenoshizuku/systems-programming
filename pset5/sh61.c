@@ -201,6 +201,7 @@ void eval_command_line(const char* s) {
 int set_foreground(pid_t p) {
     // YOU DO NOT NEED TO UNDERSTAND THIS.
     static int ttyfd = -1;
+    static int shell_owns_foreground = 0;
     if (ttyfd < 0) {
         // We need a fd for the current terminal, so open /dev/tty.
         int fd = open("/dev/tty", O_RDWR);
@@ -212,6 +213,9 @@ int set_foreground(pid_t p) {
         close(fd);
         // The /dev/tty file descriptor should be closed in child processes.
         fcntl(ttyfd, F_SETFD, FD_CLOEXEC);
+        // Only mess with /dev/tty's controlling process group if the shell
+        // is in /dev/tty's controlling process group.
+        shell_owns_foreground = (getpgrp() == tcgetpgrp(ttyfd));
     }
     // `p` is in its own process group.
     int r = setpgid(p, p);
@@ -219,7 +223,10 @@ int set_foreground(pid_t p) {
         return r;
     // The terminal's controlling process group is `p` (so processes in group
     // `p` can output to the screen, read from the keyboard, etc.).
-    return tcsetpgrp(ttyfd, p);
+    if (shell_owns_foreground)
+        return tcsetpgrp(ttyfd, p);
+    else
+        return 0;
 }
 
 
