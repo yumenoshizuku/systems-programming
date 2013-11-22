@@ -1,0 +1,4 @@
+*.o
+cmdline
+out
+sh61
