@@ -36,6 +36,12 @@ struct command {
     int needcondition;
     int background;
     int piping;
+    int redirectstdin;
+    int redirectstdout;
+    int redirectstderr;
+    char* stdinfilename;
+    char* stdoutfilename;
+    char* stderrfilename;
     int* type;
     char** argv;                // arguments, terminated by NULL
 };
@@ -50,6 +56,12 @@ static command* command_alloc(void) {
     c->needcondition = -1;
     c->background = 0;
     c->piping = 0;
+    c->redirectstdin = 0;
+    c->redirectstdout = 0;
+    c->redirectstderr = 0;
+    c->stdinfilename = NULL;
+    c->stdoutfilename = NULL;
+    c->stderrfilename = NULL;
     c->type = NULL;
     c->argv = NULL;
     return c;
@@ -199,6 +211,7 @@ void eval_command(command* c, int* condition) {
 				child_argv[i] = c->argv[i];
 			}
 		}
+		
 		typedef int pipefd[2];
 		pipefd* pipes = (pipefd*) malloc(numpipes * sizeof(pipefd));
 		pid_t* pids = (pid_t*) malloc((numpipes + 1) * sizeof(pid_t*));
@@ -211,12 +224,44 @@ void eval_command(command* c, int* condition) {
   				close(pipes[i][0]);
   				dup2(pipes[i][1], STDOUT_FILENO);
   				close(pipes[i][1]);
+  				if(c->stdinfilename) {
+	    			int fin = open(c->stdinfilename, O_RDONLY);
+	    			if(fin < 0) {
+	    				perror("No such file or directory\n");
+	    			}
+	    			dup2(fin, STDIN_FILENO);
+	    			close(fin);
+	    		}
+	    		if(c->stderrfilename) {
+	    			int ferr = open(c->stderrfilename, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH);
+	    			if(ferr < 0) {
+	    				perror("No such file or directory\n");
+	    			}
+	    			dup2(ferr, STDERR_FILENO);
+	    			close(ferr);
+	    		}
   				execvp(child_argv[child_argvbegin[i]], &child_argv[child_argvbegin[i]]);
   				exit(1);
   			} else if(pids[i] == 0 && i == numpipes) {
   				close(pipes[i-1][1]);
   				dup2(pipes[i-1][0], STDIN_FILENO);
   				close(pipes[i-1][0]);
+	    		if(c->stdoutfilename) {
+	    			int fout = open(c->stdoutfilename, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH);
+	    			if(fout < 0) {
+	    				perror("No such file or directory\n");
+	    			}
+	    			dup2(fout, STDOUT_FILENO);
+	    			close(fout);
+	    		}
+	    		if(c->stderrfilename) {
+	    			int ferr = open(c->stderrfilename, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH);
+	    			if(ferr < 0) {
+	    				perror("No such file or directory\n");
+	    			}
+	    			dup2(ferr, STDERR_FILENO);
+	    			close(ferr);
+	    		}
   				execvp(child_argv[child_argvbegin[i]], &child_argv[child_argvbegin[i]]);
   				exit(1);
   			} else if(pids[i] == 0) {
@@ -226,10 +271,18 @@ void eval_command(command* c, int* condition) {
   				close(pipes[i][0]);
   				dup2(pipes[i][1], STDOUT_FILENO);
   				close(pipes[i][1]);
+	    		if(c->stderrfilename) {
+	    			int ferr = open(c->stderrfilename, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH);
+	    			if(ferr < 0) {
+	    				perror("No such file or directory\n");
+	    			}
+	    			dup2(ferr, STDERR_FILENO);
+	    			close(ferr);
+	    		}
   				execvp(child_argv[child_argvbegin[i]], &child_argv[child_argvbegin[i]]);
   				exit(1);
   			} else if(i != numpipes) {
-//  			close(pipes[i][0]);		OMG THIS STUPID LINE WASTED 20 HOURS OF MY LIFETIME
+//  			close(pipes[i][0]);		OMG THIS STUPID LINE WASTED 20 HOURS OF MY LOST-FOREVER LIFETIME
   				close(pipes[i][1]);
   				if(!c->background) {
     				waitpid(pids[i], &status, 0);
@@ -246,6 +299,10 @@ void eval_command(command* c, int* condition) {
     			}
   			}
 		}
+		free(child_argv);
+		free(child_argvbegin);
+		free(pipes);
+		free(pids);
 	} else {
     	pid_t pid = fork();
     	if (pid) {
@@ -259,6 +316,30 @@ void eval_command(command* c, int* condition) {
     		}
     	}
     	else {
+	    	if(c->stdinfilename) {
+	    		int fin = open(c->stdinfilename, O_RDONLY);
+	    		if(fin < 0) {
+	    			perror("No such file or directory\n");
+	    		}
+	    		dup2(fin, STDIN_FILENO);
+	    		close(fin);
+	    	}
+	    	if(c->stdoutfilename) {
+	    		int fout = open(c->stdoutfilename, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH);
+	    		if(fout < 0) {
+	    			perror("No such file or directory\n");
+	    		}
+	    		dup2(fout, STDOUT_FILENO);
+	    		close(fout);
+	    	}
+	    	if(c->stderrfilename) {
+	    		int ferr = open(c->stderrfilename, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH);
+	    		if(ferr < 0) {
+	    			perror("No such file or directory\n");
+	    		}
+	    		dup2(ferr, STDERR_FILENO);
+	    		close(ferr);
+	    	}
 	    	execvp(c->argv[0], &(c->argv[0]));
 	    	exit(1);
     	}
@@ -305,8 +386,27 @@ void eval_command_line(const char* s) {
     				commandlist[listcontent] = c;
     				++listcontent;
     			}
+        	} else if(type == TOKEN_REDIRECTION) {
+        		if(token[0] == '<' || token[0] == '0') {
+        			c->redirectstdin = 1;
+        		} else if(token[0] == '>' || token[0] == '1') {
+        			c->redirectstdout = 1;
+        		} else if(token[0] == '2' && token[1] == '>') {
+        			c->redirectstderr = 1;
+        		}
         	} else {
-        		command_append_arg(c, type, token);
+        		if(c->redirectstdin) {
+        			c->stdinfilename = token;
+        			c->redirectstdin = 0;
+        		} else if(c->redirectstdout) {
+        			c->stdoutfilename = token;
+        			c->redirectstdout = 0;
+        		} else if(c->redirectstderr) {
+        			c->stderrfilename = token;
+        			c->redirectstderr = 0;
+        		} else {
+        			command_append_arg(c, type, token);
+        		}
         	}
     }
 
@@ -366,7 +466,7 @@ int set_foreground(pid_t p) {
 
 
 int main(int argc, char* argv[]) {
-    FILE* command_file = stdin;
+    int command_file = stdin;
     int quiet = 0;
     int r = 0;
 
