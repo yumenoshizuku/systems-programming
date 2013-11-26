@@ -33,6 +33,10 @@ const char* parse_shell_token(const char* str, int* type, char** token);
 typedef struct command command;
 struct command {
     int argc;                   // number of arguments
+    int needcondition;
+    int background;
+    int piping;
+    int* type;
     char** argv;                // arguments, terminated by NULL
 };
 
@@ -43,6 +47,10 @@ struct command {
 static command* command_alloc(void) {
     command* c = (command*) malloc(sizeof(command));
     c->argc = 0;
+    c->needcondition = -1;
+    c->background = 0;
+    c->piping = 0;
+    c->type = NULL;
     c->argv = NULL;
     return c;
 }
@@ -55,6 +63,7 @@ static void command_free(command* c) {
     for (int i = 0; i != c->argc; ++i)
         free(c->argv[i]);
     free(c->argv);
+    free(c->type);
     free(c);
 }
 
@@ -63,7 +72,9 @@ static void command_free(command* c) {
 //    Add `word` as an argument to command `c`. This increments `c->argc`
 //    and augments `c->argv`.
 
-static void command_append_arg(command* c, char* word) {
+static void command_append_arg(command* c, int type, char* word) {
+	c->type = (int*) realloc(c->type, sizeof(int) * (c->argc + 1));
+    c->type[c->argc] = type;
     c->argv = (char**) realloc(c->argv, sizeof(char*) * (c->argc + 2));
     c->argv[c->argc] = word;
     c->argv[c->argc + 1] = NULL;
@@ -170,27 +181,151 @@ const char* parse_shell_token(const char* str, int* type, char** token) {
 //    Tell the operating system that `p` is the current foreground process.
 int set_foreground(pid_t p);
 
-void eval_command(command* c) {
-    pid_t pid = -1;             // process ID for child
-    // Your code here!
-    printf("eval_command not done yet\n");
+void eval_command(command* c, int* condition) {
+	int status;
+	if(c->piping) {
+		int numpipes = 0;
+		char** child_argv = (char**) malloc((c->argc + 1) * sizeof(char**));
+		child_argv[c->argc] = NULL;
+		int* child_argvbegin = (int*) malloc(sizeof(int*));
+		child_argvbegin[0] = 0;
+		for(int i = 0; i != c->argc; ++i) {
+			if(c->argv[i][0] == '|') {
+				child_argv[i] = NULL;
+				++numpipes;
+				child_argvbegin = (int*) realloc(child_argvbegin, (numpipes + 1) * sizeof(int*));
+				child_argvbegin[numpipes] = i + 1;
+			} else {
+				child_argv[i] = c->argv[i];
+			}
+		}
+		typedef int pipefd[2];
+		pipefd* pipes = (pipefd*) malloc(numpipes * sizeof(pipefd));
+		pid_t* pids = (pid_t*) malloc((numpipes + 1) * sizeof(pid_t*));
+		for(int i = 0; i <= numpipes; ++i) {
+			if(i != numpipes) {
+				pipe(pipes[i]);
+			}
+  			pids[i] = fork();
+  			if(pids[i] == 0 && i == 0) {
+  				close(pipes[i][0]);
+  				dup2(pipes[i][1], STDOUT_FILENO);
+  				close(pipes[i][1]);
+  				execvp(child_argv[child_argvbegin[i]], &child_argv[child_argvbegin[i]]);
+  				exit(1);
+  			} else if(pids[i] == 0 && i == numpipes) {
+  				close(pipes[i-1][1]);
+  				dup2(pipes[i-1][0], STDIN_FILENO);
+  				close(pipes[i-1][0]);
+  				execvp(child_argv[child_argvbegin[i]], &child_argv[child_argvbegin[i]]);
+  				exit(1);
+  			} else if(pids[i] == 0) {
+  				close(pipes[i-1][1]);
+  				dup2(pipes[i-1][0], STDIN_FILENO);
+  				close(pipes[i-1][0]);
+  				close(pipes[i][0]);
+  				dup2(pipes[i][1], STDOUT_FILENO);
+  				close(pipes[i][1]);
+  				execvp(child_argv[child_argvbegin[i]], &child_argv[child_argvbegin[i]]);
+  				exit(1);
+  			} else if(i != numpipes) {
+//  			close(pipes[i][0]);		OMG THIS STUPID LINE WASTED 20 HOURS OF MY LIFETIME
+  				close(pipes[i][1]);
+  				if(!c->background) {
+    				waitpid(pids[i], &status, 0);
+    				if (WIFEXITED(status)) {
+    					*condition = WEXITSTATUS(status);
+    				}
+    			}
+  			} else {
+  				if(!c->background) {
+    				waitpid(pids[i], &status, 0);
+    				if (WIFEXITED(status)) {
+    					*condition = WEXITSTATUS(status);
+    				}
+    			}
+  			}
+		}
+	} else {
+    	pid_t pid = fork();
+    	if (pid) {
+    		if(!c->background) {
+    			waitpid(pid, &status, 0);
+    			if (WIFEXITED(status)) {
+    				*condition = WEXITSTATUS(status);
+    			}
+    		} else {
+    			;
+    		}
+    	}
+    	else {
+	    	execvp(c->argv[0], &(c->argv[0]));
+	    	exit(1);
+    	}
+    }
 }
 
 
 void eval_command_line(const char* s) {
     int type;
     char* token;
+    command** commandlist = (command**) malloc(sizeof(command*));
+    int listcontent = 1;
     // Your code here!
 
     // build the command
     command* c = command_alloc();
-    while ((s = parse_shell_token(s, &type, &token)) != NULL)
-        command_append_arg(c, token);
+    commandlist[0] = c;
+    while ((s = parse_shell_token(s, &type, &token)) != NULL) {
+    		if(type == TOKEN_CONTROL) {
+    			if(token[0] == ';') {
+    				c = command_alloc();
+    				commandlist = (command**) realloc(commandlist, (listcontent + 1)*sizeof(command*));
+    				commandlist[listcontent] = c;
+    				++listcontent;
+    			} else if(token[0] == '&' && !token[1]) {
+        			c->background = 1;
+    				c = command_alloc();
+    				commandlist = (command**) realloc(commandlist, (listcontent + 1)*sizeof(command*));
+    				commandlist[listcontent] = c;
+    				++listcontent;
+    			} else if(token[0] == '&' && token[1] == '&') {
+    				c = command_alloc();
+    				c->needcondition = 0;
+    				commandlist = (command**) realloc(commandlist, (listcontent + 1)*sizeof(command*));
+    				commandlist[listcontent] = c;
+    				++listcontent;
+    			} else if(token[0] == '|' && !token[1]) {
+    				c->piping = 1;
+    				command_append_arg(c, type, token);
+    			} else if(token[0] == '|' && token[1] == '|') {
+    				c = command_alloc();
+    				c->needcondition = 1;
+    				commandlist = (command**) realloc(commandlist, (listcontent + 1)*sizeof(command*));
+    				commandlist[listcontent] = c;
+    				++listcontent;
+    			}
+        	} else {
+        		command_append_arg(c, type, token);
+        	}
+    }
 
     // execute the command
-    if (c->argc)
-        eval_command(c);
-    command_free(c);
+    int condition = -1;
+    for(int i = 0; i < listcontent; i++) {
+    	if (commandlist[i]->argc)
+    		if (commandlist[i]->needcondition == -1 || (commandlist[i]->needcondition == 0 && condition == 0) || (commandlist[i]->needcondition == 1 && condition != 0)) {
+/*
+       			for(int j = 0; j < commandlist[i]->argc; j++) {
+        			fprintf(stderr, "%s\t", commandlist[i]->argv[j]);
+        		}
+        		fprintf(stderr, "\n");
+*/        		eval_command(commandlist[i], &condition);
+        	}
+	    command_free(commandlist[i]);
+    }
+    free(commandlist);
+    
 }
 
 

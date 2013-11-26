@@ -178,6 +178,7 @@ int sys_page_alloc_func(uintptr_t addr, pageentry_t* pagetable, pid_t pid) {
 
 void process_setup(pid_t pid, int program_number) {
     process_init(&processes[pid], 0);
+    // copies page table from kernel and mark accessible pages
     if((processes[pid].p_pagetable = copy_pagetable(kernel_pagetable, pid))) {
     	virtual_memory_map(processes[pid].p_pagetable, PROC_START_ADDR, 
     													PROC_START_ADDR, 
@@ -188,13 +189,15 @@ void process_setup(pid_t pid, int program_number) {
     													2 * PAGESIZE, 
     													PTE_P | PTE_W | PTE_U);
     } else {
-    	return;
+    	return; // page table allocation fails
 	}
     processes[pid].p_state = P_RUNNABLE;
     int r = program_load(&processes[pid], program_number);
     assert(r >= 0);
+    // stack starts from the highest virtual address
     processes[pid].p_registers.reg_esp = MEMSIZE_VIRTUAL;
     uintptr_t stack_page = MEMSIZE_VIRTUAL - PAGESIZE;
+    // using a function that does the same as SYS_PAGE_ALLOC
     sys_page_alloc_func(stack_page, processes[pid].p_pagetable, pid);
 }
 
