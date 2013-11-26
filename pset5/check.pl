@@ -143,15 +143,18 @@ $rev = 'rev';
 
     [ 'Test 27',
       "$rev temp.out | $rev",
-      'goHangasaLAmIimalaSAgnaHoG' ],
+      'goHangasaLAmIimalaSAgnaHoG',
+      'echo goHangasaLAmIimalaSAgnaHoG > temp.out' ],
 
     [ 'Test 28',
       'cat temp.out | tr [A-Z] [a-z] | md5sum | tr -d -',
-      '8e21d03f7955611616bcd2337fe9eac1' ],
+      '8e21d03f7955611616bcd2337fe9eac1',
+      'echo goHangasaLAmIimalaSAgnaHoG > temp.out' ],
 
     [ 'Test 29',
       "$rev temp.out | md5sum | tr [a-z] [A-Z] | tr -d -",
-      '502B109B37EC769342948826736FA063' ],
+      '502B109B37EC769342948826736FA063',
+      'echo goHangasaLAmIimalaSAgnaHoG > temp.out' ],
 
 
     [ 'Test 30 (Redirection)',
