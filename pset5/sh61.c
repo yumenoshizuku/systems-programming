@@ -15,6 +15,7 @@
 #define TOKEN_NORMAL        1  // token is normal command word
 #define TOKEN_REDIRECTION   2  // token is a redirection operator
 
+#define PWDLEN				80
 // parse_shell_token(str, type, token)
 //    Parse the next token from the shell command `str`. Stores the type of
 //    the token in `*type`; this is one of the TOKEN_ constants. Stores the
@@ -193,7 +194,7 @@ const char* parse_shell_token(const char* str, int* type, char** token) {
 //    Tell the operating system that `p` is the current foreground process.
 int set_foreground(pid_t p);
 
-void eval_command(command* c, int* condition) {
+void eval_command(command* c, int* condition, char* pwd) {
 	int status;
 	if(c->piping) {
 		int numpipes = 0;
@@ -306,6 +307,11 @@ void eval_command(command* c, int* condition) {
 	} else {
     	pid_t pid = fork();
     	if (pid) {
+    		if(!strcmp(c->argv[0], "cd")) {
+	    		if(!chdir(c->argv[1])) {
+	    			strcpy(pwd, getcwd(pwd, PWDLEN));
+	    		}
+	    	}
     		if(!c->background) {
     			waitpid(pid, &status, 0);
     			if (WIFEXITED(status)) {
@@ -340,8 +346,16 @@ void eval_command(command* c, int* condition) {
 	    		dup2(ferr, STDERR_FILENO);
 	    		close(ferr);
 	    	}
-	    	execvp(c->argv[0], &(c->argv[0]));
-	    	exit(1);
+	    	if(!strcmp(c->argv[0], "cd")) {
+	    		if(!chdir(c->argv[1])) {
+	    			exit(0);
+	    		} else {
+	    			exit(1);
+	    		}
+	    	} else {
+	    		execvp(c->argv[0], &(c->argv[0]));
+	    		exit(1);
+	    	}
     	}
     }
 }
@@ -412,20 +426,22 @@ void eval_command_line(const char* s) {
 
     // execute the command
     int condition = -1;
+    char* pwd = (char*) malloc(PWDLEN * sizeof(char));
+    strcpy(pwd, getcwd(pwd, PWDLEN));
     for(int i = 0; i < listcontent; i++) {
     	if (commandlist[i]->argc)
     		if (commandlist[i]->needcondition == -1 || (commandlist[i]->needcondition == 0 && condition == 0) || (commandlist[i]->needcondition == 1 && condition != 0)) {
 /*
        			for(int j = 0; j < commandlist[i]->argc; j++) {
         			fprintf(stderr, "%s\t", commandlist[i]->argv[j]);
-        		}
-        		fprintf(stderr, "\n");
-*/        		eval_command(commandlist[i], &condition);
+       		}
+         		fprintf(stderr, "%s\n", pwd);
+ */       		eval_command(commandlist[i], &condition, pwd);
         	}
 	    command_free(commandlist[i]);
     }
     free(commandlist);
-    
+    free(pwd);
 }
 
 
