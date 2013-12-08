@@ -275,9 +275,11 @@ void* pong_thread(void* threadarg) {
 		http_close(conn);
 	    if(sleeptime < 1000000)
 	    	usleep(sleeptime);
-		else
-	    	sleep(sleeptime/1000000);
-		if(sleeptime <= 64000000)
+		else {
+	    	sleep(1);
+	    	usleep(sleeptime % 1000000);
+	    }
+		if(sleeptime <= 1000000)
 	    	sleeptime += sleeptime;
     	if(conn_done_num > 0) {
 			pthread_mutex_lock(&table_lock);
