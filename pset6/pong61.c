@@ -233,6 +233,14 @@ typedef struct pong_args {
 pthread_mutex_t mutex;
 pthread_cond_t condvar;
 
+http_connection* conn_done_table[30] = {NULL};
+int conn_done_num = 0;
+pthread_mutex_t table_lock;
+
+int stop_time = 0;
+pthread_cond_t stop_time_cond;
+pthread_mutex_t time_lock;
+
 // pong_thread(threadarg)
 //    Connect to the server at the position indicated by `threadarg`
 //    (which is a pointer to a `pong_args` structure).
@@ -244,17 +252,64 @@ void* pong_thread(void* threadarg) {
 
     char url[256];
     snprintf(url, sizeof(url), "move?x=%d&y=%d&style=on",
-             pa.x, pa.y);
-
-    http_connection* conn = http_connect(pong_addr);
+             pa.x, pa.y);       
+    http_connection* conn;
+	if(conn_done_num > 0) {
+		pthread_mutex_lock(&table_lock);
+		conn = conn_done_table[conn_done_num - 1];
+		--conn_done_num;
+		pthread_mutex_unlock(&table_lock);
+	} else {
+    	conn = http_connect(pong_addr);
+    }
+    pthread_mutex_lock(&time_lock);
+    while(stop_time != 0) {
+    	 pthread_cond_wait(&stop_time_cond, &time_lock);
+    }
+    pthread_mutex_unlock(&time_lock);
     http_send_request(conn, url);
     http_receive_response_headers(conn);
+    
+    size_t sleeptime = 10000;
+	while(conn->state == HTTP_BROKEN && conn->status_code == -1) {
+		http_close(conn);
+	    if(sleeptime < 1000000)
+	    	usleep(sleeptime);
+		else
+	    	sleep(sleeptime/1000000);
+		if(sleeptime <= 64000000)
+	    	sleeptime += sleeptime/3;
+    	if(conn_done_num > 0) {
+			pthread_mutex_lock(&table_lock);
+			conn = conn_done_table[conn_done_num - 1];
+			--conn_done_num;
+			pthread_mutex_unlock(&table_lock);
+		} else {
+    		conn = http_connect(pong_addr);
+    	}
+		http_send_request(conn, url);
+		http_receive_response_headers(conn);
+	}
+	
     if (conn->status_code != 200)
         fprintf(stderr, "%.3f sec: warning: %d,%d: "
                 "server returned status %d (expected 200)\n",
                 elapsed(), pa.x, pa.y, conn->status_code);
-
+	pthread_cond_signal(&condvar);
     http_receive_response_body(conn);
+    pthread_mutex_lock(&time_lock);
+    if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) < 1) {
+    	sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
+    	if(stop_time < 1000)
+			usleep(stop_time * 1000);
+		else {
+			sleep(stop_time / 1000);
+			usleep((stop_time % 1000) * 1000);
+		}
+		stop_time = 0;
+		pthread_cond_broadcast(&stop_time_cond);
+    }
+    pthread_mutex_unlock(&time_lock);
     double result = strtod(conn->buf, NULL);
     if (result < 0) {
         fprintf(stderr, "%.3f sec: server returned error: %s\n",
@@ -262,10 +317,17 @@ void* pong_thread(void* threadarg) {
         exit(1);
     }
 
-    http_close(conn);
+    if(conn->state == HTTP_DONE && conn_done_num < 29) {
+		pthread_mutex_lock(&table_lock);
+    	conn_done_table[conn_done_num] = conn;
+    	++conn_done_num;
+		pthread_mutex_unlock(&table_lock);
+    } else {
+    	http_close(conn);
+    }
 
     // signal the main thread to continue
-    pthread_cond_signal(&condvar);
+    // pthread_cond_signal(&condvar);
     // and exit!
     pthread_exit(NULL);
 }
@@ -341,6 +403,7 @@ int main(int argc, char** argv) {
     // initialize global synchronization objects
     pthread_mutex_init(&mutex, NULL);
     pthread_cond_init(&condvar, NULL);
+    pthread_mutex_init(&table_lock, NULL);
 
     // play game
     int x = 0, y = 0, dx = 1, dy = 1;
@@ -357,11 +420,12 @@ int main(int argc, char** argv) {
                     elapsed(), strerror(r));
             exit(1);
         }
-
+		
         // wait until that thread signals us to continue
         pthread_mutex_lock(&mutex);
         pthread_cond_wait(&condvar, &mutex);
         pthread_mutex_unlock(&mutex);
+
 
         // update position
         x += dx;
