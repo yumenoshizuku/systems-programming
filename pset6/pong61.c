@@ -275,9 +275,11 @@ void* pong_thread(void* threadarg) {
 		http_close(conn);
 	    if(sleeptime < 1000000)
 	    	usleep(sleeptime);
-		else
-	    	sleep(sleeptime/1000000);
-		if(sleeptime <= 64000000)
+		else {
+	    	sleep(1);
+	    	usleep(sleeptime % 1000000);
+	    }
+		if(sleeptime <= 1000000)
 	    	sleeptime += sleeptime;
     	if(conn_done_num > 0) {
 			pthread_mutex_lock(&table_lock);
@@ -287,6 +289,11 @@ void* pong_thread(void* threadarg) {
 		} else {
     		conn = http_connect(pong_addr);
     	}
+    	pthread_mutex_lock(&time_lock);
+    	while(stop_time != 0) {
+    	 	pthread_cond_wait(&stop_time_cond, &time_lock);
+		}
+    	pthread_mutex_unlock(&time_lock);
 		http_send_request(conn, url);
 		http_receive_response_headers(conn);
 	}
