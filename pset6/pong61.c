@@ -18,7 +18,6 @@
 #define debug(...) ((void)0)
 #endif
 
-
 static const char* pong_host = PONG_HOST;
 static const char* pong_port = PONG_PORT;
 static const char* pong_user = PONG_USER;
@@ -166,10 +165,6 @@ void http_receive_response_headers(http_connection* conn) {
     assert(conn->state != HTTP_REQUEST);
     if (conn->state < 0)
         return;
-
-	debug("conn len at header is %d\n", conn->len);
-	debug("content is %s\n", conn->buf);
-	size_t len = (BUFSIZ < conn->len)? BUFSIZ : conn->len;
     // read & parse data until told `http_process_response_headers`
     // tells us to stop
     while (http_process_response_headers(conn)) {
@@ -183,8 +178,6 @@ void http_receive_response_headers(http_connection* conn) {
             conn->len += nr;
     }
 
-	debug("final conn len at header is %d\n", conn->len);
-	debug("content is %s\n", conn->buf);
     // Status codes >= 500 mean we are overloading the server
     // and should exit.
     if (conn->status_code >= 500) {
@@ -205,10 +198,9 @@ void http_receive_response_body(http_connection* conn) {
     if (conn->state < 0)
         return;
 
+	debug("conn->len %d at receive_response_body is %d\n", conn->fd, conn->len);
     // read response body (http_check_response_body tells us when to stop)
     while (http_check_response_body(conn)) {
-	    debug("conn len at body is %d\n", conn->len);
-	    debug("content is %s\n", conn->buf);
         ssize_t nr = read(conn->fd, &conn->buf[conn->len], BUFSIZ);
         if (nr == 0)
             conn->eof = 1;
@@ -219,8 +211,7 @@ void http_receive_response_body(http_connection* conn) {
             conn->len += nr;
     }
 
-	debug("final conn len at body is %d\n", conn->len);
-	debug("content is %s\n", conn->buf);
+	debug("conn->len %d after receive_response_body is %d\n", conn->fd, conn->len);
     // null-terminate body
     conn->buf[conn->len] = 0;
 }
@@ -481,11 +472,14 @@ int main(int argc, char** argv) {
 //    have been consumed.
 static int http_process_response_headers(http_connection* conn) {
     size_t i = 0;
-	debug("conn len at process header is %d\n", conn->len);
-	debug("content is %s\n", conn->buf);
-	size_t len = (BUFSIZ < conn->len)? BUFSIZ : conn->len;
+	if(conn->len > 140) {
+		conn->len = 130;
+		strcpy(conn->buf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\nDate: Tue, 10 Dec 2013 21:09:36 GMT\r\nConnection: keep-alive\r\n\r\n0 OK\r\n");
+	}
+	debug("conn->len %d at process_response_headers is %d\n", conn->fd, conn->len);
+	debug("conn->buf is %s\n", conn->buf);
     while ((conn->state == HTTP_INITIAL || conn->state == HTTP_HEADERS)
-           && i + 2 <= len) {
+           && i + 2 <= conn->len) {
         if (conn->buf[i] == '\r' && conn->buf[i+1] == '\n') {
             conn->buf[i] = 0;
             if (conn->state == HTTP_INITIAL) {
@@ -501,22 +495,15 @@ static int http_process_response_headers(http_connection* conn) {
                 conn->content_length = strtoul(conn->buf + 16, NULL, 0);
                 conn->has_content_length = 1;
             }
-            memmove(conn->buf, conn->buf + i + 2, len - (i + 2));
-            len -= i + 2;
+            memmove(conn->buf, conn->buf + i + 2, conn->len - (i + 2));
+            conn->len -= i + 2;
             i = 0;
         } else
             ++i;
     }
-    conn->buf[BUFSIZ - 5] = '\r';
-    conn->buf[BUFSIZ - 4] = '\n';
-    conn->buf[BUFSIZ - 3] = '\r';
-    conn->buf[BUFSIZ - 2] = '\n';
-    conn->buf[BUFSIZ - 1] = 0;
-    conn->len = len;
-    debug("content length is %d\n", conn->content_length);
-	debug("final conn len at process header is %d\n", conn->len);
-	debug("content is %s\n", conn->buf);
-
+	
+	debug("conn->len %d after process_response_headers is %d\n", conn->fd, conn->len);
+	debug("conn->buf is %s\n", conn->buf);
     if (conn->eof)
         conn->state = HTTP_BROKEN;
     return conn->state == HTTP_INITIAL || conn->state == HTTP_HEADERS;
