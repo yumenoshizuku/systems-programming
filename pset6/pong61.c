@@ -11,7 +11,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include "serverinfo.h"
-
+#define DEBUG
 #ifdef DEBUG
 #define debug printf
 #else
@@ -472,11 +472,11 @@ int main(int argc, char** argv) {
 //    have been consumed.
 static int http_process_response_headers(http_connection* conn) {
     size_t i = 0;
-	if(conn->len > 140) {
+/*	if(conn->len > 140) {
 		conn->len = 130;
 		strcpy(conn->buf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\nDate: Tue, 10 Dec 2013 21:09:36 GMT\r\nConnection: keep-alive\r\n\r\n0 OK\r\n");
 	}
-	debug("conn->len %d at process_response_headers is %d\n", conn->fd, conn->len);
+*/	debug("conn->len %d at process_response_headers is %d\n", conn->fd, conn->len);
 	debug("conn->buf is %s\n", conn->buf);
     while ((conn->state == HTTP_INITIAL || conn->state == HTTP_HEADERS)
            && i + 2 <= conn->len) {
@@ -498,6 +498,12 @@ static int http_process_response_headers(http_connection* conn) {
             memmove(conn->buf, conn->buf + i + 2, conn->len - (i + 2));
             conn->len -= i + 2;
             i = 0;
+        } else if(conn->buf[i] == '*') {
+        	conn->buf[i + 1] = '\r';
+        	conn->buf[i + 2] = '\n';
+        	conn->buf[i + 3] = 0;
+        	conn->len = i + 2;
+        	++i;
         } else
             ++i;
     }
