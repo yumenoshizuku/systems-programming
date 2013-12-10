@@ -252,7 +252,7 @@ void* pong_thread(void* threadarg) {
 
     char url[256];
     snprintf(url, sizeof(url), "move?x=%d&y=%d&style=on",
-             pa.x, pa.y);       
+             pa.x, pa.y);      
     http_connection* conn;
 	if(conn_done_num > 0) {
 		pthread_mutex_lock(&table_lock);
@@ -304,9 +304,8 @@ void* pong_thread(void* threadarg) {
                 elapsed(), pa.x, pa.y, conn->status_code);
 	pthread_cond_signal(&condvar);
     http_receive_response_body(conn);
-    printf("%s\n", http_truncate_response(conn));
     pthread_mutex_lock(&time_lock);
-    if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) < 1) {
+    if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) && stop_time != 0) {
     	sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
     	pthread_mutex_unlock(&time_lock);
     	if(stop_time < 1000)
@@ -315,8 +314,10 @@ void* pong_thread(void* threadarg) {
 			sleep(stop_time / 1000);
 			usleep((stop_time % 1000) * 1000);
 		}
+    	pthread_mutex_lock(&time_lock);
 		stop_time = 0;
 		pthread_cond_broadcast(&stop_time_cond);
+    	pthread_mutex_unlock(&time_lock);
     } else {
     	pthread_mutex_unlock(&time_lock);
     }
@@ -327,12 +328,13 @@ void* pong_thread(void* threadarg) {
         exit(1);
     }
 
+	pthread_mutex_lock(&table_lock);
     if(conn->state == HTTP_DONE && conn_done_num < 29) {
-		pthread_mutex_lock(&table_lock);
     	conn_done_table[conn_done_num] = conn;
     	++conn_done_num;
 		pthread_mutex_unlock(&table_lock);
     } else {
+		pthread_mutex_unlock(&table_lock);
     	http_close(conn);
     }
 
