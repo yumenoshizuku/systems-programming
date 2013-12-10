@@ -317,6 +317,7 @@ void* pong_thread(void* threadarg) {
 		}
     	pthread_mutex_lock(&time_lock);
 		stop_time = 0;
+    	pthread_mutex_unlock(&time_lock);
 		pthread_cond_broadcast(&stop_time_cond);
     }
     double result = strtod(conn->buf, NULL);
