@@ -12,7 +12,6 @@
 #include <pthread.h>
 #include "serverinfo.h"
 
-#define DEBUG
 #ifdef DEBUG
 #define debug printf
 #else
