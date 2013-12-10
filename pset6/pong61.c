@@ -305,8 +305,10 @@ void* pong_thread(void* threadarg) {
 	pthread_cond_signal(&condvar);
     http_receive_response_body(conn);
     printf("%s\n", http_truncate_response(conn));
+    pthread_mutex_lock(&time_lock);
     if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) < 1) {
     	sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
+    	pthread_mutex_unlock(&time_lock);
     	if(stop_time < 1000)
 			usleep(stop_time * 1000);
 		else {
@@ -315,6 +317,8 @@ void* pong_thread(void* threadarg) {
 		}
 		stop_time = 0;
 		pthread_cond_broadcast(&stop_time_cond);
+    } else {
+    	pthread_mutex_unlock(&time_lock);
     }
     double result = strtod(conn->buf, NULL);
     if (result < 0) {
