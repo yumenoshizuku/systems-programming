@@ -306,18 +306,14 @@ void* pong_thread(void* threadarg) {
     http_receive_response_body(conn);
     printf("%s\n", http_truncate_response(conn));
     if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) < 1) {
-    	pthread_mutex_lock(&time_lock);
     	sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
-    	pthread_mutex_unlock(&time_lock);
     	if(stop_time < 1000)
 			usleep(stop_time * 1000);
 		else {
 			sleep(stop_time / 1000);
 			usleep((stop_time % 1000) * 1000);
 		}
-    	pthread_mutex_lock(&time_lock);
 		stop_time = 0;
-    	pthread_mutex_unlock(&time_lock);
 		pthread_cond_broadcast(&stop_time_cond);
     }
     double result = strtod(conn->buf, NULL);
