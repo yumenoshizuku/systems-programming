@@ -11,7 +11,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include "serverinfo.h"
-#define DEBUG
+//#define DEBUG
 #ifdef DEBUG
 #define debug printf
 #else
