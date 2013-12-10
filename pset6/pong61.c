@@ -304,19 +304,22 @@ void* pong_thread(void* threadarg) {
                 elapsed(), pa.x, pa.y, conn->status_code);
 	pthread_cond_signal(&condvar);
     http_receive_response_body(conn);
+    printf("%s\n", http_truncate_response(conn));
     pthread_mutex_lock(&time_lock);
     if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) < 1) {
     	sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
+    	pthread_mutex_unlock(&time_lock);
     	if(stop_time < 1000)
 			usleep(stop_time * 1000);
 		else {
 			sleep(stop_time / 1000);
 			usleep((stop_time % 1000) * 1000);
 		}
+    	pthread_mutex_lock(&time_lock);
 		stop_time = 0;
+    	pthread_mutex_unlock(&time_lock);
 		pthread_cond_broadcast(&stop_time_cond);
     }
-    pthread_mutex_unlock(&time_lock);
     double result = strtod(conn->buf, NULL);
     if (result < 0) {
         fprintf(stderr, "%.3f sec: server returned error: %s\n",
