@@ -313,7 +313,7 @@ void* pong_thread(void* threadarg) {
     http_receive_response_body(conn);
     pthread_mutex_lock(&time_lock);
     if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) && stop_time != 0) {
-    	if(sscanf(http_truncate_response(conn), "+%d STOP", &stop_time)){
+    	sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
     	pthread_mutex_unlock(&time_lock);
     	if(stop_time < 1000)
 			usleep(stop_time * 1000);
@@ -325,9 +325,6 @@ void* pong_thread(void* threadarg) {
 		stop_time = 0;
 		pthread_cond_broadcast(&stop_time_cond);
     	pthread_mutex_unlock(&time_lock);
-    	} else {
-    		pthread_mutex_unlock(&time_lock);
-    	}
     } else {
     	pthread_mutex_unlock(&time_lock);
     }
@@ -477,13 +474,24 @@ static int http_process_response_headers(http_connection* conn) {
     size_t i = 0;
     char * stop_pos;
     char * plus_pos;
-	debug("conn->len %d at process_response_headers is %d\n", conn->fd, conn->len);
     if(conn->len > 220) {
-				conn->len = 18;
-				strcpy(conn->buf, "HTTP/1.1 200 OK\r\n\r\n");
+    	for(int i = 15; i < 220; ++i) {
+    		if(conn->buf[i] == 'S' && conn->buf[i + 1] == 'T' && conn->buf[i + 2] == 'O' && conn->buf[i + 3] == 'P') {
+	    		conn->buf[i + 4] = 0;
+    			conn->len = i + 5;
+    			break;
+    		} else if(conn->buf[i] == 'O' && conn->buf[i + 1] == 'K') {
+    			conn->buf[i + 2] = 0;
+				conn->len = i + 3;
+				break;
+			} else if(i == 219) {
+				conn->len = 130;
+				strcpy(conn->buf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\nDate: Tue, 10 Dec 2013 21:09:36 GMT\r\nConnection: keep-alive\r\n\r\n0 OK\0");
+			}
+    	}
 	}
-    			debug("changed conn->len to %d\n", conn->len);
-				debug("truncated conn->buf is %s\n", conn->buf);
+	debug("conn->len %d at process_response_headers is %d\n", conn->fd, conn->len);
+	debug("conn->buf is what you have to modify!!!%s\n", conn->buf);
     while ((conn->state == HTTP_INITIAL || conn->state == HTTP_HEADERS)
            && i + 2 <= conn->len) {
         if (conn->buf[i] == '\r' && conn->buf[i+1] == '\n') {
