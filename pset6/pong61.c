@@ -476,7 +476,8 @@ static int http_process_response_headers(http_connection* conn) {
     char * plus_pos;
     if(conn->len > 220) {
     	for(int i = 15; i < 220; ++i) {
-    		if(conn->buf[i] == 'S' && conn->buf[i + 1] == 'T' && conn->buf[i + 2] == 'O' && conn->buf[i + 3] == 'P') {
+    		if(conn->buf[i] == 'S' && conn->buf[i + 1] == 'T' && conn->buf[i + 2] == 'O' && conn->buf[i + 3] == 'P') {			
+	printf("found buggy conn->buf\n%s\n", conn->buf);
 	    		conn->buf[i + 4] = 0;
     			conn->len = i + 5;
     			break;
