@@ -478,7 +478,6 @@ static int http_process_response_headers(http_connection* conn) {
     char * stop_pos;
     char * plus_pos;
 	debug("conn->len %d at process_response_headers is %d\n", conn->fd, conn->len);
-printf("conn->buf is\n%s\n", conn->buf);
     if(conn->len > 220) {
     	for(int i = 0; i < 220; ++i) {
     		if(conn->buf[i] == 'X' || conn->buf[i] == '*' ) {
@@ -489,9 +488,9 @@ printf("conn->buf is\n%s\n", conn->buf);
 	    		conn->buf[i+4] = 0;
     			conn->len = 0;
     			break;
-    		//} else if(i == 219) {
-			//	conn->len = 130;
-			//	strcpy(conn->buf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\nDate: Tue, 10 Dec 2013 21:09:36 GMT\r\nConnection: keep-alive\r\n\r\n0 OK\0");
+    		} else if(i == 219) {
+				conn->len = 18;
+				strcpy(conn->buf, "HTTP/1.1 200 OK\r\n\r\n");
 			} else if(conn->buf[i] == 0) {
 				break;
 			}
