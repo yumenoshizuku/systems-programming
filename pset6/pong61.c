@@ -310,7 +310,6 @@ void* pong_thread(void* threadarg) {
                 "server returned status %d (expected 200)\n",
                 elapsed(), pa.x, pa.y, conn->status_code);
     
-    http_receive_response_body(conn);
 	pthread_cond_signal(&condvar);
     pthread_mutex_lock(&time_lock);
     if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) && stop_time != 0) {
@@ -329,6 +328,7 @@ void* pong_thread(void* threadarg) {
     } else {
     	pthread_mutex_unlock(&time_lock);
     }
+    http_receive_response_body(conn);
     double result = strtod(conn->buf, NULL);
     if (result < 0) {
         fprintf(stderr, "%.3f sec: server returned error: %s\n",
