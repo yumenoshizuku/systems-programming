@@ -309,7 +309,7 @@ void* pong_thread(void* threadarg) {
         fprintf(stderr, "%.3f sec: warning: %d,%d: "
                 "server returned status %d (expected 200)\n",
                 elapsed(), pa.x, pa.y, conn->status_code);
-    if (conn->len > 130) {
+    if (conn->len > 5) {
 printf("conn->buf is \n%s\n", conn->buf);
     	http_receive_response_body(conn);
     	pthread_mutex_lock(&time_lock);
