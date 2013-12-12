@@ -330,6 +330,25 @@ retry:
 		// woke up, tell all threads to continue
 		pthread_cond_broadcast(&stop_time_cond);
     	pthread_mutex_unlock(&time_lock);
+    } else if (stop_time != 0) {
+    	while(stop_time != 0) {
+    		pthread_cond_wait(&stop_time_cond, &time_lock);
+    	}
+    	if(sscanf(http_truncate_response(conn), "+%d STOP", &stop_time) && stop_time != 0) {
+    		pthread_mutex_unlock(&time_lock);
+    		if(stop_time < 1000)
+				usleep(stop_time * 1000);
+			else {
+				sleep(stop_time / 1000);
+				usleep((stop_time % 1000) * 1000);
+			}
+    		pthread_mutex_lock(&time_lock);
+			stop_time = 0;
+			pthread_cond_broadcast(&stop_time_cond);
+    		pthread_mutex_unlock(&time_lock);
+    	} else {
+    		pthread_mutex_unlock(&time_lock);
+    	}
     } else {
     	pthread_mutex_unlock(&time_lock);
     }
