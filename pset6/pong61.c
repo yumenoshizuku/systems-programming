@@ -310,6 +310,7 @@ void* pong_thread(void* threadarg) {
                 "server returned status %d (expected 200)\n",
                 elapsed(), pa.x, pa.y, conn->status_code);
     if (conn->len > 130) {
+printf("conn->buf is \n%s\n", conn->buf);
     	http_receive_response_body(conn);
     	pthread_mutex_lock(&time_lock);
     	if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) && stop_time != 0) {
