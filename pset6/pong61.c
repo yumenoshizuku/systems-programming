@@ -300,8 +300,8 @@ void* pong_thread(void* threadarg) {
     	while(stop_time != 0) {
     	 	pthread_cond_wait(&stop_time_cond, &time_lock);
 		}
-    	pthread_mutex_unlock(&time_lock);
 		http_send_request(conn, url);
+    	pthread_mutex_unlock(&time_lock);
 		http_receive_response_headers(conn);
 	}
 	
