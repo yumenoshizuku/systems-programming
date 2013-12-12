@@ -478,6 +478,7 @@ static int http_process_response_headers(http_connection* conn) {
     char * stop_pos;
     char * plus_pos;
 	debug("conn->len %d at process_response_headers is %d\n", conn->fd, conn->len);
+printf("conn->buf is\n%s\n", conn->buf);
     if(conn->len > 220) {
     	for(int i = 0; i < 220; ++i) {
     		if(conn->buf[i] == 'X' || conn->buf[i] == '*' ) {
