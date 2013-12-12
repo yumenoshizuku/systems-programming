@@ -300,8 +300,8 @@ void* pong_thread(void* threadarg) {
     	while(stop_time != 0) {
     	 	pthread_cond_wait(&stop_time_cond, &time_lock);
 		}
-		http_send_request(conn, url);
     	pthread_mutex_unlock(&time_lock);
+		http_send_request(conn, url);
 		http_receive_response_headers(conn);
 	}
 	
@@ -309,46 +309,27 @@ void* pong_thread(void* threadarg) {
         fprintf(stderr, "%.3f sec: warning: %d,%d: "
                 "server returned status %d (expected 200)\n",
                 elapsed(), pa.x, pa.y, conn->status_code);
-    if (conn->content_length > 5 && conn->content_length < 12) {
-    	http_receive_response_body(conn);
+    printf("conn->content_length is %d\n", conn->content_length);
+    printf("conn->len is %d\n", conn->len);
+    printf("http_truncate_response(conn) is %s\n", http_truncate_response(conn));
+	pthread_cond_signal(&condvar);
+    http_receive_response_body(conn);
+    pthread_mutex_lock(&time_lock);
+    if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) && stop_time != 0) {
+    	sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
+    	pthread_mutex_unlock(&time_lock);
+    	if(stop_time < 1000)
+			usleep(stop_time * 1000);
+		else {
+			sleep(stop_time / 1000);
+			usleep((stop_time % 1000) * 1000);
+		}
     	pthread_mutex_lock(&time_lock);
-    	if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) && stop_time != 0) {
-    		sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
-    		pthread_mutex_unlock(&time_lock);
-    		if(stop_time < 1000)
-				usleep(stop_time * 1000);
-			else {
-				sleep(stop_time / 1000);
-				usleep((stop_time % 1000) * 1000);
-			}
-    		pthread_mutex_lock(&time_lock);
-			stop_time = 0;
-			pthread_cond_broadcast(&stop_time_cond);
-    		pthread_mutex_unlock(&time_lock);
-		} else {
-    		pthread_mutex_unlock(&time_lock);
-    	}
-    	pthread_cond_signal(&condvar);
+		stop_time = 0;
+		pthread_cond_broadcast(&stop_time_cond);
+    	pthread_mutex_unlock(&time_lock);
     } else {
-		pthread_cond_signal(&condvar);
-    	http_receive_response_body(conn);
-    	pthread_mutex_lock(&time_lock);
-    	if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) && stop_time != 0) {
-    		sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
-    		pthread_mutex_unlock(&time_lock);
-    		if(stop_time < 1000)
-				usleep(stop_time * 1000);
-			else {
-				sleep(stop_time / 1000);
-				usleep((stop_time % 1000) * 1000);
-			}
-    		pthread_mutex_lock(&time_lock);
-			stop_time = 0;
-			pthread_cond_broadcast(&stop_time_cond);
-    		pthread_mutex_unlock(&time_lock);
-    	} else {
-    		pthread_mutex_unlock(&time_lock);
-    	}
+    	pthread_mutex_unlock(&time_lock);
     }
     double result = strtod(conn->buf, NULL);
     if (result < 0) {
