@@ -543,10 +543,6 @@ int set_foreground(pid_t p) {
         return 0;
 }
 
-void addzombie(pid_t* zombies, int* numzombies) {
-
-}
-
 int main(int argc, char* argv[]) {
     int command_file = stdin;
     int quiet = 0;
@@ -602,11 +598,11 @@ int main(int argc, char* argv[]) {
             needprompt = 1;
         }
 		
+    	// kill zombie processes
+    	for(int i = 0; i < z->numzombies; ++i)
+			waitpid(z->zombielist[i], NULL, WNOHANG | WUNTRACED);
     }
-    // kill zombie processes
-    for(int i = 0; i < z->numzombies; ++i)
-		waitpid(z->zombielist[i], NULL, WNOHANG | WUNTRACED);
-    zombies_free(z);
 
+    zombies_free(z);
     return 0;
 }
