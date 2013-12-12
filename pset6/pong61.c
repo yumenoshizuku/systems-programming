@@ -479,22 +479,8 @@ static int http_process_response_headers(http_connection* conn) {
     char * plus_pos;
 	debug("conn->len %d at process_response_headers is %d\n", conn->fd, conn->len);
     if(conn->len > 220) {
-    	for(int i = 0; i < 220; ++i) {
-    		if(conn->buf[i] == 'X' || conn->buf[i] == '*' ) {
-	    		conn->buf[i] = '0';
-	    		conn->buf[i+1] = ' ';
-	    		conn->buf[i+2] = 'O';
-	    		conn->buf[i+3] = 'K';
-	    		conn->buf[i+4] = 0;
-    			conn->len = 0;
-    			break;
-    		} else if(i == 219) {
 				conn->len = 18;
 				strcpy(conn->buf, "HTTP/1.1 200 OK\r\n\r\n");
-			} else if(conn->buf[i] == 0) {
-				break;
-			}
-    	}
 	}
     			debug("changed conn->len to %d\n", conn->len);
 				debug("truncated conn->buf is %s\n", conn->buf);
