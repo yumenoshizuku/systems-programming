@@ -309,24 +309,46 @@ void* pong_thread(void* threadarg) {
         fprintf(stderr, "%.3f sec: warning: %d,%d: "
                 "server returned status %d (expected 200)\n",
                 elapsed(), pa.x, pa.y, conn->status_code);
-	pthread_cond_signal(&condvar);
-    http_receive_response_body(conn);
-    pthread_mutex_lock(&time_lock);
-    if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) && stop_time != 0) {
-    	sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
-    	pthread_mutex_unlock(&time_lock);
-    	if(stop_time < 1000)
-			usleep(stop_time * 1000);
-		else {
-			sleep(stop_time / 1000);
-			usleep((stop_time % 1000) * 1000);
-		}
+    if (conn->len > 130 && conn->len < 140) {
+    	http_receive_response_body(conn);
     	pthread_mutex_lock(&time_lock);
-		stop_time = 0;
-		pthread_cond_broadcast(&stop_time_cond);
-    	pthread_mutex_unlock(&time_lock);
+    	if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) && stop_time != 0) {
+    		sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
+    		pthread_mutex_unlock(&time_lock);
+    		if(stop_time < 1000)
+				usleep(stop_time * 1000);
+			else {
+				sleep(stop_time / 1000);
+				usleep((stop_time % 1000) * 1000);
+			}
+    		pthread_mutex_lock(&time_lock);
+			stop_time = 0;
+			pthread_cond_broadcast(&stop_time_cond);
+    		pthread_mutex_unlock(&time_lock);
+		} else {
+    		pthread_mutex_unlock(&time_lock);
+    	}
+    	pthread_cond_signal(&condvar);
     } else {
-    	pthread_mutex_unlock(&time_lock);
+		pthread_cond_signal(&condvar);
+    	http_receive_response_body(conn);
+    	pthread_mutex_lock(&time_lock);
+    	if(stop_time == 0 && sscanf(http_truncate_response(conn), "%d OK", &stop_time) && stop_time != 0) {
+    		sscanf(http_truncate_response(conn), "+%d STOP", &stop_time);
+    		pthread_mutex_unlock(&time_lock);
+    		if(stop_time < 1000)
+				usleep(stop_time * 1000);
+			else {
+				sleep(stop_time / 1000);
+				usleep((stop_time % 1000) * 1000);
+			}
+    		pthread_mutex_lock(&time_lock);
+			stop_time = 0;
+			pthread_cond_broadcast(&stop_time_cond);
+    		pthread_mutex_unlock(&time_lock);
+    	} else {
+    		pthread_mutex_unlock(&time_lock);
+    	}
     }
     double result = strtod(conn->buf, NULL);
     if (result < 0) {
@@ -477,8 +499,8 @@ static int http_process_response_headers(http_connection* conn) {
     if(conn->len > 220) {
     	for(int i = 15; i < 220; ++i) {
     		if(conn->buf[i] == 'S' && conn->buf[i + 1] == 'T' && conn->buf[i + 2] == 'O' && conn->buf[i + 3] == 'P') {			
-    printf("conn->len here is %d\n", conn->len);
-	printf("found buggy conn->buf\n%s\n", conn->buf);
+    //printf("conn->len here is %d\n", conn->len);
+	//printf("found buggy conn->buf\n%s\n", conn->buf);
 	    		conn->buf[i + 4] = 0;
     			conn->len = i + 5;
     			break;
